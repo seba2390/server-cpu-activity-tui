@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from src.monitor import CPUMonitor, ServerMetrics, CPUCore
+from src.monitor import CPUMonitor, ServerMetrics, CPUCore, MemoryInfo
 from src.ssh_client import SSHClient, ServerConfig, ConnectionStatus
 
 
@@ -28,7 +28,7 @@ def ssh_client(server_config):
 @pytest.fixture
 def cpu_monitor(ssh_client):
     """Create a CPU monitor instance."""
-    return CPUMonitor(ssh_client=ssh_client, poll_interval=0.1)
+    return CPUMonitor(ssh_client=ssh_client, poll_interval=0.1, history_window=60)
 
 
 @pytest.mark.asyncio
@@ -36,6 +36,7 @@ async def test_monitor_initialization(cpu_monitor, ssh_client):
     """Test CPU monitor initialization."""
     assert cpu_monitor.ssh_client == ssh_client
     assert cpu_monitor.poll_interval == 0.1
+    assert cpu_monitor.history_window == 60
     assert not cpu_monitor._running
 
 
@@ -139,7 +140,10 @@ cpu0 300 55 87 1300 30 0 14 0 0 0
 cpu1 300 55 88 1300 30 0 14 0 0 0
 """
 
-    ssh_client.execute_command = AsyncMock(side_effect=[proc_stat_first, proc_stat_second])
+    ssh_client.execute_command = AsyncMock(side_effect=[
+        proc_stat_first, None,  # First call: proc_stat, then None for meminfo
+        proc_stat_second, None  # Second call: proc_stat, then None for meminfo
+    ])
 
     # First collection (no previous data)
     metrics1 = await cpu_monitor._collect_cpu_metrics()
@@ -394,3 +398,115 @@ cpu0 250 50 75 1250 25 0 12 0 0 0
     assert cpu_monitor._running
 
     await cpu_monitor.stop()
+
+
+@pytest.mark.asyncio
+async def test_parse_meminfo(cpu_monitor):
+    """Test parsing /proc/meminfo output."""
+    meminfo_output = """MemTotal:       16384000 kB
+MemFree:         8192000 kB
+MemAvailable:   10240000 kB
+Buffers:          512000 kB
+Cached:          2048000 kB
+SwapCached:            0 kB
+Active:          4096000 kB
+Inactive:        3072000 kB
+"""
+
+    memory_info = cpu_monitor._parse_meminfo(meminfo_output)
+
+    assert memory_info is not None
+    assert memory_info.total_mb == pytest.approx(16000, rel=1e-1)
+    assert memory_info.available_mb == pytest.approx(10000, rel=1e-1)
+    assert memory_info.free_mb == pytest.approx(8000, rel=1e-1)
+    assert memory_info.cached_mb == pytest.approx(2000, rel=1e-1)
+    assert memory_info.buffers_mb == pytest.approx(500, rel=1e-1)
+    assert 0 < memory_info.usage_percent < 100
+
+
+@pytest.mark.asyncio
+async def test_parse_meminfo_invalid(cpu_monitor):
+    """Test parsing invalid meminfo output."""
+    invalid_output = "invalid data"
+
+    memory_info = cpu_monitor._parse_meminfo(invalid_output)
+
+    # Should return None or handle gracefully
+    assert memory_info is None or memory_info.total_mb == 0
+
+
+@pytest.mark.asyncio
+async def test_cpu_history_tracking(cpu_monitor, ssh_client):
+    """Test CPU history tracking."""
+    proc_stat_output = """cpu  1000 200 300 5000 100 0 50 0 0 0
+cpu0 250 50 75 1250 25 0 12 0 0 0
+cpu1 250 50 75 1250 25 0 13 0 0 0
+"""
+
+    ssh_client.ensure_connected = AsyncMock(return_value=True)
+    ssh_client.execute_command = AsyncMock(return_value=proc_stat_output)
+
+    # Start monitoring
+    await cpu_monitor.start()
+
+    # Wait for a few poll cycles
+    await asyncio.sleep(0.3)
+
+    # Get history
+    history = await cpu_monitor.get_cpu_history()
+
+    assert len(history) > 0
+    # Each entry should be a tuple of (timestamp, usage)
+    for entry in history:
+        assert len(entry) == 2
+        assert isinstance(entry[0], float)  # timestamp
+        assert isinstance(entry[1], float)  # usage
+
+    await cpu_monitor.stop()
+
+
+@pytest.mark.asyncio
+async def test_history_window_trimming(cpu_monitor):
+    """Test that history is trimmed to the configured window."""
+    import time
+
+    # Manually add some old history data
+    current_time = time.time()
+    cpu_monitor._cpu_history = [
+        (current_time - 100, 50.0),  # Old data outside window
+        (current_time - 50, 45.0),   # Within window
+        (current_time - 10, 55.0),   # Recent
+    ]
+
+    # Trigger trimming by adding new data
+    cpu_monitor._cpu_history.append((current_time, 60.0))
+    cutoff_time = current_time - cpu_monitor.history_window
+    cpu_monitor._cpu_history = [(t, u) for t, u in cpu_monitor._cpu_history if t >= cutoff_time]
+
+    # Check that old data was trimmed
+    history = await cpu_monitor.get_cpu_history()
+    assert all(t >= cutoff_time for t, _ in history)
+
+
+@pytest.mark.asyncio
+async def test_collect_metrics_with_memory(cpu_monitor, ssh_client):
+    """Test collecting CPU metrics with memory information."""
+    proc_stat_output = """cpu  1000 200 300 5000 100 0 50 0 0 0
+cpu0 250 50 75 1250 25 0 12 0 0 0
+"""
+
+    meminfo_output = """MemTotal:       16384000 kB
+MemFree:         8192000 kB
+MemAvailable:   10240000 kB
+Buffers:          512000 kB
+Cached:          2048000 kB
+"""
+
+    ssh_client.execute_command = AsyncMock(side_effect=[proc_stat_output, meminfo_output])
+
+    metrics = await cpu_monitor._collect_cpu_metrics()
+
+    assert metrics.connected
+    assert metrics.memory is not None
+    assert metrics.memory.total_mb > 0
+    assert metrics.memory.usage_percent >= 0

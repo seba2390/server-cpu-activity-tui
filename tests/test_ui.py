@@ -4,8 +4,8 @@ import pytest
 from unittest.mock import Mock
 from textual.widgets import Static
 
-from src.ui import CPUCoreWidget, ServerWidget
-from src.monitor import CPUCore, ServerMetrics
+from src.ui import CPUCoreWidget, ServerWidget, MemoryWidget, HistoryPlotWidget
+from src.monitor import CPUCore, ServerMetrics, MemoryInfo
 
 
 def test_cpu_core_widget_initialization():
@@ -126,9 +126,10 @@ def test_server_widget_update_metrics():
         connected=True,
     )
 
-    # Mock the containers to avoid mounting issues in tests
+    # Mock the containers and query_one to avoid mounting issues in tests
     widget.cores_container = None  # Don't try to mount
     widget.header_widget = Static()
+    widget.query_one = Mock(return_value=Mock())  # Mock query_one for cores_content
 
     widget.update_metrics(metrics)
 
@@ -679,6 +680,9 @@ def test_server_widget_remove_excess_core_widgets():
     """Test server widget removes excess core widgets when cores decrease."""
     widget = ServerWidget(server_name="test-server")
     widget.cores_container = None  # Don't mount
+    widget.header_widget = Static()
+    mock_container = Mock()
+    widget.query_one = Mock(return_value=mock_container)
 
     # Start with 4 cores
     cores = [CPUCore(core_id=i, usage_percent=50.0) for i in range(4)]
@@ -753,3 +757,172 @@ def test_monitoring_app_add_server_widget_without_container():
     app.add_server_widget(new_widget)
 
     assert len(app.server_widgets) == 1
+
+
+def test_memory_widget_initialization():
+    """Test memory widget initialization."""
+    widget = MemoryWidget(low_threshold=30, medium_threshold=70)
+
+    assert widget.low_threshold == 30
+    assert widget.medium_threshold == 70
+    assert widget.memory_info is None
+
+
+def test_memory_widget_render_no_data():
+    """Test rendering memory widget with no data."""
+    widget = MemoryWidget()
+
+    rendered = widget.render()
+
+    assert "No data available" in rendered
+
+
+def test_memory_widget_render_low_usage():
+    """Test rendering memory widget with low usage."""
+    memory_info = MemoryInfo(
+        total_mb=16000.0,
+        used_mb=4000.0,
+        free_mb=12000.0,
+        available_mb=12000.0,
+        usage_percent=25.0,
+        cached_mb=1000.0,
+        buffers_mb=500.0,
+    )
+
+    widget = MemoryWidget(low_threshold=30, medium_threshold=70)
+    widget.update_memory(memory_info)
+
+    rendered = widget.render()
+
+    assert "Memory:" in rendered
+    assert "25.0%" in rendered
+    assert "[green]" in rendered  # Should be green for low usage
+
+
+def test_memory_widget_render_medium_usage():
+    """Test rendering memory widget with medium usage."""
+    memory_info = MemoryInfo(
+        total_mb=16000.0,
+        used_mb=8000.0,
+        free_mb=8000.0,
+        available_mb=8000.0,
+        usage_percent=50.0,
+        cached_mb=1000.0,
+        buffers_mb=500.0,
+    )
+
+    widget = MemoryWidget(low_threshold=30, medium_threshold=70)
+    widget.update_memory(memory_info)
+
+    rendered = widget.render()
+
+    assert "50.0%" in rendered
+    assert "[yellow]" in rendered  # Should be yellow for medium usage
+
+
+def test_memory_widget_render_high_usage():
+    """Test rendering memory widget with high usage."""
+    memory_info = MemoryInfo(
+        total_mb=16000.0,
+        used_mb=14000.0,
+        free_mb=2000.0,
+        available_mb=2000.0,
+        usage_percent=87.5,
+        cached_mb=1000.0,
+        buffers_mb=500.0,
+    )
+
+    widget = MemoryWidget(low_threshold=30, medium_threshold=70)
+    widget.update_memory(memory_info)
+
+    rendered = widget.render()
+
+    assert "87.5%" in rendered
+    assert "[red]" in rendered  # Should be red for high usage
+
+
+def test_history_plot_widget_initialization():
+    """Test history plot widget initialization."""
+    widget = HistoryPlotWidget(history_window=120)
+
+    assert widget.history_window == 120
+    assert widget.history_data == []
+
+
+def test_history_plot_widget_render_no_data():
+    """Test rendering history plot with no data."""
+    widget = HistoryPlotWidget()
+
+    rendered = widget.render()
+
+    assert "Collecting data" in rendered or "No data" in rendered.lower()
+
+
+def test_history_plot_widget_render_with_data():
+    """Test rendering history plot with data."""
+    import time
+
+    current_time = time.time()
+    history_data = [
+        (current_time - 30, 30.0),
+        (current_time - 20, 45.0),
+        (current_time - 10, 60.0),
+        (current_time, 50.0),
+    ]
+
+    widget = HistoryPlotWidget(history_window=60)
+    widget.update_history(history_data)
+
+    rendered = widget.render()
+
+    # Should show some visualization
+    assert "Avg:" in rendered
+    assert "Window:" in rendered
+    # Should have sparkline characters
+    assert any(char in rendered for char in ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"])
+
+
+def test_history_plot_widget_update():
+    """Test updating history plot data."""
+    import time
+
+    widget = HistoryPlotWidget()
+
+    assert widget.history_data == []
+
+    current_time = time.time()
+    new_data = [(current_time - 10, 40.0), (current_time, 50.0)]
+
+    widget.update_history(new_data)
+
+    assert widget.history_data == new_data
+
+
+def test_server_widget_with_history_window():
+    """Test server widget initialization with history_window."""
+    widget = ServerWidget(
+        server_name="test-server",
+        low_threshold=30,
+        medium_threshold=70,
+        start_collapsed=False,
+        history_window=120,
+    )
+
+    assert widget.server_name == "test-server"
+    assert widget.history_window == 120
+    assert widget.expanded
+
+
+def test_server_widget_update_history():
+    """Test server widget history update."""
+    import time
+
+    widget = ServerWidget(server_name="test-server")
+
+    # Update would normally be called after mount, so we need to set up the widget first
+    # For this test, we'll just verify the method exists and can be called
+    current_time = time.time()
+    history_data = [(current_time - 10, 40.0), (current_time, 50.0)]
+
+    # This should not raise an error even if history_widget is None
+    widget.update_history(history_data)

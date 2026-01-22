@@ -23,6 +23,19 @@ class CPUCore:
 
 
 @dataclass
+class MemoryInfo:
+    """Memory information."""
+
+    total_mb: float
+    used_mb: float
+    free_mb: float
+    available_mb: float
+    usage_percent: float
+    cached_mb: float = 0.0
+    buffers_mb: float = 0.0
+
+
+@dataclass
 class ServerMetrics:
     """CPU metrics for a server."""
 
@@ -31,6 +44,7 @@ class ServerMetrics:
     cores: list[CPUCore]
     overall_usage: float
     connected: bool
+    memory: Optional[MemoryInfo] = None
     error_message: Optional[str] = None
 
     @property
@@ -42,15 +56,17 @@ class ServerMetrics:
 class CPUMonitor:
     """Monitors CPU usage on remote servers via SSH."""
 
-    def __init__(self, ssh_client: SSHClient, poll_interval: float = 2.0):
+    def __init__(self, ssh_client: SSHClient, poll_interval: float = 2.0, history_window: int = 60):
         """Initialize CPU monitor.
 
         Args:
             ssh_client: SSH client for server connection
             poll_interval: Interval between CPU polls in seconds
+            history_window: Number of seconds to keep in history
         """
         self.ssh_client = ssh_client
         self.poll_interval = poll_interval
+        self.history_window = history_window
 
         self._running = False
         self._task: Optional[asyncio.Task] = None
@@ -59,6 +75,9 @@ class CPUMonitor:
 
         # For CPU usage calculation
         self._prev_stats: Optional[dict[int, dict[str, int]]] = None
+
+        # CPU history: list of (timestamp, overall_usage) tuples
+        self._cpu_history: list[tuple[float, float]] = []
 
     async def start(self):
         """Start monitoring CPU metrics."""
@@ -94,6 +113,15 @@ class CPUMonitor:
         async with self._lock:
             return self._latest_metrics
 
+    async def get_cpu_history(self) -> list[tuple[float, float]]:
+        """Get CPU usage history.
+
+        Returns:
+            List of (timestamp, overall_usage) tuples
+        """
+        async with self._lock:
+            return self._cpu_history.copy()
+
     async def _monitor_loop(self):
         """Main monitoring loop that periodically collects CPU data."""
         while self._running:
@@ -119,6 +147,15 @@ class CPUMonitor:
                 async with self._lock:
                     self._latest_metrics = metrics
 
+                    # Add to history if connected
+                    if metrics.connected:
+                        current_time = time.time()
+                        self._cpu_history.append((current_time, metrics.overall_usage))
+
+                        # Trim history to keep only data within the window
+                        cutoff_time = current_time - self.history_window
+                        self._cpu_history = [(t, u) for t, u in self._cpu_history if t >= cutoff_time]
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -136,9 +173,12 @@ class CPUMonitor:
         """
         try:
             # Read /proc/stat to get CPU usage
-            output = await self.ssh_client.execute_command("cat /proc/stat")
+            cpu_output = await self.ssh_client.execute_command("cat /proc/stat")
 
-            if output is None:
+            # Read /proc/meminfo to get memory usage
+            mem_output = await self.ssh_client.execute_command("cat /proc/meminfo")
+
+            if cpu_output is None:
                 return ServerMetrics(
                     server_name=self.ssh_client.config.name,
                     timestamp=time.time(),
@@ -149,7 +189,10 @@ class CPUMonitor:
                 )
 
             # Parse /proc/stat output
-            current_stats = self._parse_proc_stat(output)
+            current_stats = self._parse_proc_stat(cpu_output)
+
+            # Parse memory info
+            memory_info = self._parse_meminfo(mem_output) if mem_output else None
 
             # Calculate CPU usage based on difference from previous reading
             cores = []
@@ -189,6 +232,7 @@ class CPUMonitor:
                 cores=sorted(cores, key=lambda c: c.core_id),
                 overall_usage=overall_usage,
                 connected=True,
+                memory=memory_info,
             )
 
         except Exception as e:
@@ -280,3 +324,62 @@ class CPUMonitor:
 
         # Clamp to 0-100 range
         return max(0.0, min(100.0, usage))
+
+    def _parse_meminfo(self, output: str) -> Optional[MemoryInfo]:
+        """Parse /proc/meminfo output to extract memory statistics.
+
+        Args:
+            output: Content of /proc/meminfo
+
+        Returns:
+            MemoryInfo object with memory statistics, or None if parsing fails
+        """
+        try:
+            mem_values = {}
+
+            for line in output.split("\n"):
+                if ":" not in line:
+                    continue
+
+                parts = line.split(":")
+                if len(parts) != 2:
+                    continue
+
+                key = parts[0].strip()
+                value_str = parts[1].strip().split()[0]  # Remove 'kB' unit
+
+                try:
+                    mem_values[key] = int(value_str)
+                except ValueError:
+                    continue
+
+            # Extract required values (all in kB, convert to MB)
+            total_kb = mem_values.get("MemTotal", 0)
+            free_kb = mem_values.get("MemFree", 0)
+            available_kb = mem_values.get("MemAvailable", free_kb)  # Fallback to free if not available
+            buffers_kb = mem_values.get("Buffers", 0)
+            cached_kb = mem_values.get("Cached", 0)
+
+            # Convert to MB
+            total_mb = total_kb / 1024.0
+            free_mb = free_kb / 1024.0
+            available_mb = available_kb / 1024.0
+            buffers_mb = buffers_kb / 1024.0
+            cached_mb = cached_kb / 1024.0
+
+            used_mb = total_mb - available_mb
+            usage_percent = (used_mb / total_mb * 100.0) if total_mb > 0 else 0.0
+
+            return MemoryInfo(
+                total_mb=total_mb,
+                used_mb=used_mb,
+                free_mb=free_mb,
+                available_mb=available_mb,
+                usage_percent=usage_percent,
+                cached_mb=cached_mb,
+                buffers_mb=buffers_mb,
+            )
+
+        except Exception as e:
+            logger.warning(f"Error parsing memory info: {e}")
+            return None

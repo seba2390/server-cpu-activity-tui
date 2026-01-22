@@ -77,6 +77,7 @@ class CPUMonitoringApp:
         display_config = self.config.get("display", {})
 
         poll_interval = monitoring_config.get("poll_interval", 2.0)
+        history_window = monitoring_config.get("history_window", 60)
         connection_timeout = monitoring_config.get("connection_timeout", 10)
         max_retries = monitoring_config.get("max_retries", 3)
         retry_delay = monitoring_config.get("retry_delay", 5)
@@ -106,7 +107,7 @@ class CPUMonitoringApp:
                 self.ssh_clients.append(ssh_client)
 
                 # Create CPU monitor
-                monitor = CPUMonitor(ssh_client=ssh_client, poll_interval=poll_interval)
+                monitor = CPUMonitor(ssh_client=ssh_client, poll_interval=poll_interval, history_window=history_window)
                 self.monitors.append(monitor)
 
                 # Create UI widget
@@ -115,6 +116,7 @@ class CPUMonitoringApp:
                     low_threshold=low_threshold,
                     medium_threshold=medium_threshold,
                     start_collapsed=start_collapsed,
+                    history_window=history_window,
                 )
                 self.server_widgets.append(widget)
 
@@ -233,6 +235,7 @@ class CPUMonitoringApp:
         display_config = self.config.get("display", {})
 
         poll_interval = monitoring_config.get("poll_interval", 2.0)
+        history_window = monitoring_config.get("history_window", 60)
         connection_timeout = monitoring_config.get("connection_timeout", 10)
         max_retries = monitoring_config.get("max_retries", 3)
         retry_delay = monitoring_config.get("retry_delay", 5)
@@ -257,7 +260,7 @@ class CPUMonitoringApp:
         )
         self.ssh_clients.append(ssh_client)
 
-        monitor = CPUMonitor(ssh_client=ssh_client, poll_interval=poll_interval)
+        monitor = CPUMonitor(ssh_client=ssh_client, poll_interval=poll_interval, history_window=history_window)
         self.monitors.append(monitor)
 
         widget = ServerWidget(
@@ -265,6 +268,7 @@ class CPUMonitoringApp:
             low_threshold=low_threshold,
             medium_threshold=medium_threshold,
             start_collapsed=start_collapsed,
+            history_window=history_window,
         )
         self.server_widgets.append(widget)
 
@@ -295,6 +299,15 @@ class CPUMonitoringApp:
                     metrics = await monitor.get_metrics()
                     if metrics:
                         widget.update_metrics(metrics)
+
+                    # Update history data
+                    history_data = await monitor.get_cpu_history()
+                    if history_data:
+                        widget.update_history(history_data)
+
+                # Update status bar timestamp
+                if self.ui_app:
+                    self.ui_app.update_metrics_timestamp()
 
                 await asyncio.sleep(ui_refresh_interval)
 

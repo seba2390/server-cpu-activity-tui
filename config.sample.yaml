@@ -30,6 +30,10 @@ monitoring:
   # Should be <= poll_interval for smooth updates
   ui_refresh_interval: 0.5
 
+  # Time window for CPU history graph (seconds)
+  # This determines how many seconds of history to display
+  history_window: 60
+
   # SSH connection timeout (seconds)
   connection_timeout: 10
 
