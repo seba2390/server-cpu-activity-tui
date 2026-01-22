@@ -1,14 +1,171 @@
 """TUI (Terminal User Interface) components for CPU monitoring."""
 
-from typing import Optional
+from typing import Optional, Callable
 
 from textual.app import App, ComposeResult
-from textual.containers import Vertical, VerticalScroll
-from textual.widgets import Header, Footer, Static
+from textual.containers import Vertical, VerticalScroll, Horizontal, Grid
+from textual.widgets import Header, Footer, Static, Button, Input, Label
+from textual.screen import ModalScreen
 from textual.reactive import reactive
 from textual.binding import Binding
 
 from .monitor import ServerMetrics, CPUCore
+
+
+class ConfirmDeleteScreen(ModalScreen[bool]):
+    """Modal screen for confirming server deletion."""
+
+    CSS = """
+    ConfirmDeleteScreen {
+        align: center middle;
+    }
+
+    #confirm-dialog {
+        width: 60;
+        height: auto;
+        padding: 1 2;
+        background: $surface;
+        border: solid $primary;
+    }
+
+    #confirm-dialog Label {
+        width: 100%;
+        text-align: center;
+        margin-bottom: 1;
+    }
+
+    #confirm-buttons {
+        width: 100%;
+        height: auto;
+        align: center middle;
+    }
+
+    #confirm-buttons Button {
+        margin: 0 2;
+    }
+    """
+
+    BINDINGS = [
+        Binding("y", "confirm", "Yes"),
+        Binding("n", "cancel", "No"),
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, server_name: str, **kwargs):
+        super().__init__(**kwargs)
+        self.server_name = server_name
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="confirm-dialog"):
+            yield Label(f"Delete server '{self.server_name}'?")
+            yield Label("This will remove the server from config.yaml")
+            with Horizontal(id="confirm-buttons"):
+                yield Button("Yes (y)", variant="error", id="yes-btn")
+                yield Button("No (n)", variant="primary", id="no-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "yes-btn")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
+class AddServerScreen(ModalScreen[Optional[dict]]):
+    """Modal screen for adding a new server."""
+
+    CSS = """
+    AddServerScreen {
+        align: center middle;
+    }
+
+    #add-dialog {
+        width: 70;
+        height: auto;
+        padding: 1 2;
+        background: $surface;
+        border: solid $primary;
+    }
+
+    #add-dialog Label {
+        margin-top: 1;
+    }
+
+    #add-dialog Input {
+        margin-bottom: 1;
+    }
+
+    #add-title {
+        width: 100%;
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #add-buttons {
+        width: 100%;
+        height: auto;
+        align: center middle;
+        margin-top: 1;
+    }
+
+    #add-buttons Button {
+        margin: 0 2;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="add-dialog"):
+            yield Label("Add New Server", id="add-title")
+            yield Label("Name:")
+            yield Input(placeholder="My Server", id="input-name")
+            yield Label("Host (IP/hostname):")
+            yield Input(placeholder="192.168.1.100", id="input-host")
+            yield Label("Username:")
+            yield Input(placeholder="ubuntu", id="input-username", value="ubuntu")
+            yield Label("SSH Key Path:")
+            yield Input(placeholder="~/.ssh/id_rsa", id="input-keypath", value="~/.ssh/id_rsa")
+            with Horizontal(id="add-buttons"):
+                yield Button("Add", variant="success", id="add-btn")
+                yield Button("Cancel", variant="primary", id="cancel-btn")
+
+    def on_mount(self) -> None:
+        self.query_one("#input-name", Input).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "add-btn":
+            self._submit()
+        else:
+            self.dismiss(None)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._submit()
+
+    def _submit(self) -> None:
+        name = self.query_one("#input-name", Input).value.strip()
+        host = self.query_one("#input-host", Input).value.strip()
+        username = self.query_one("#input-username", Input).value.strip()
+        key_path = self.query_one("#input-keypath", Input).value.strip()
+
+        if not all([name, host, username, key_path]):
+            self.notify("All fields are required", severity="error")
+            return
+
+        self.dismiss({
+            "name": name,
+            "host": host,
+            "username": username,
+            "key_path": key_path,
+        })
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class CPUCoreWidget(Static):
@@ -232,19 +389,31 @@ class MonitoringApp(App):
         Binding("right", "expand", "Expand", show=False),
         Binding("enter", "toggle_expand", "Toggle", show=False),
         Binding("r", "refresh", "Refresh", show=True),
+        Binding("a", "add_server", "Add", show=True),
+        Binding("d", "delete_server", "Delete", show=True),
         Binding("p", "command_palette", "Palette", show=True),
     ]
 
-    def __init__(self, server_widgets: list[ServerWidget], **kwargs):
+    def __init__(
+        self,
+        server_widgets: list[ServerWidget],
+        on_delete_server: Optional[Callable[[str], None]] = None,
+        on_add_server: Optional[Callable[[dict], None]] = None,
+        **kwargs
+    ):
         """Initialize the monitoring app.
 
         Args:
             server_widgets: List of server widgets to display
+            on_delete_server: Callback when a server is deleted (receives server name)
+            on_add_server: Callback when a server is added (receives server config dict)
         """
         super().__init__(**kwargs)
         self.server_widgets = server_widgets
         self.selected_index = 0
         self.main_container: Optional[VerticalScroll] = None
+        self._on_delete_server = on_delete_server
+        self._on_add_server = on_add_server
 
     def compose(self) -> ComposeResult:
         """Compose the app layout."""
@@ -296,6 +465,62 @@ class MonitoringApp(App):
         """Force refresh of all displays."""
         for widget in self.server_widgets:
             widget.refresh_display()
+
+    def action_delete_server(self):
+        """Delete the selected server."""
+        if not self.server_widgets:
+            self.notify("No servers to delete", severity="warning")
+            return
+
+        if 0 <= self.selected_index < len(self.server_widgets):
+            server_name = self.server_widgets[self.selected_index].server_name
+            self.push_screen(ConfirmDeleteScreen(server_name), self._handle_delete_confirm)
+
+    def _handle_delete_confirm(self, confirmed: bool) -> None:
+        """Handle delete confirmation result."""
+        if confirmed and 0 <= self.selected_index < len(self.server_widgets):
+            widget = self.server_widgets[self.selected_index]
+            server_name = widget.server_name
+
+            # Remove widget from list and UI
+            self.server_widgets.pop(self.selected_index)
+            widget.remove()
+
+            # Adjust selection
+            if self.selected_index >= len(self.server_widgets):
+                self.selected_index = max(0, len(self.server_widgets) - 1)
+
+            self._update_selection()
+
+            # Callback to main app to persist changes
+            if self._on_delete_server:
+                self._on_delete_server(server_name)
+
+            self.notify(f"Server '{server_name}' deleted", severity="information")
+
+    def action_add_server(self):
+        """Add a new server."""
+        self.push_screen(AddServerScreen(), self._handle_add_server)
+
+    def _handle_add_server(self, server_config: Optional[dict]) -> None:
+        """Handle add server result."""
+        if server_config:
+            # Callback to main app to create components and persist
+            if self._on_add_server:
+                self._on_add_server(server_config)
+            self.notify(f"Server '{server_config['name']}' added", severity="information")
+
+    def add_server_widget(self, widget: ServerWidget) -> None:
+        """Add a new server widget to the UI.
+
+        Args:
+            widget: The server widget to add
+        """
+        self.server_widgets.append(widget)
+        if self.main_container:
+            self.main_container.mount(widget)
+        self.selected_index = len(self.server_widgets) - 1
+        self._update_selection()
 
     def _update_selection(self):
         """Update the selection state of all server widgets."""

@@ -1,41 +1,20 @@
-# Server CPU Monitoring Configuration
-
 servers:
-  - name: "ec2_photoQsim 1"
-    host: "108.130.26.89"
-    username: "ubuntu"
-    key_path: "~/.ssh/photoQjan21.pem"
-
-  - name: "ec2_photoQsim 2"
-    host: "34.242.17.157"
-    username: "ubuntu"
-    key_path: "~/.ssh/photoQjan21.pem"
-
-# Monitoring settings
+- name: ec2_photoQsim 1
+  host: 108.130.26.89
+  username: ubuntu
+  key_path: ~/.ssh/photoQjan21.pem
+- name: ec2_photoQsim 2
+  host: 34.242.17.157
+  username: ubuntu
+  key_path: ~/.ssh/photoQjan21.pem
 monitoring:
-  # How often to poll CPU data from servers (seconds)
   poll_interval: 2.0
-
-  # UI refresh rate (seconds)
   ui_refresh_interval: 0.5
-
-  # Connection timeout (seconds)
   connection_timeout: 10
-
-  # SSH connection retry attempts
   max_retries: 3
-
-  # Delay between retry attempts (seconds)
   retry_delay: 5
-
-# Display settings
 display:
-  # Color thresholds for CPU usage (percent)
   low_threshold: 30
   medium_threshold: 70
-
-  # Show detailed per-core statistics
   show_detailed_stats: true
-
-  # Initial collapsed state for servers
   start_collapsed: true

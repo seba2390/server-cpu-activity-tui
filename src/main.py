@@ -174,6 +174,116 @@ class CPUMonitoringApp:
 
         logger.info("Monitoring stopped")
 
+    def save_config(self):
+        """Save current configuration to YAML file."""
+        try:
+            with open(self.config_path, "w") as f:
+                yaml.dump(self.config, f, default_flow_style=False, sort_keys=False)
+            logger.info(f"Configuration saved to {self.config_path}")
+        except Exception as e:
+            logger.error(f"Error saving configuration: {e}")
+
+    def delete_server(self, server_name: str):
+        """Delete a server from the configuration and stop its monitoring.
+
+        Args:
+            server_name: Name of the server to delete
+        """
+        # Find and remove the server from config
+        self.config["servers"] = [
+            s for s in self.config["servers"] if s["name"] != server_name
+        ]
+
+        # Find index of the server to remove
+        idx = None
+        for i, client in enumerate(self.ssh_clients):
+            if client.config.name == server_name:
+                idx = i
+                break
+
+        if idx is not None:
+            # Stop and remove components
+            monitor = self.monitors.pop(idx)
+            ssh_client = self.ssh_clients.pop(idx)
+            self.server_widgets.pop(idx)
+
+            # Schedule async cleanup
+            asyncio.create_task(self._cleanup_server(monitor, ssh_client))
+
+        # Save updated config
+        self.save_config()
+        logger.info(f"Deleted server: {server_name}")
+
+    async def _cleanup_server(self, monitor: CPUMonitor, ssh_client: SSHClient):
+        """Clean up server resources asynchronously."""
+        await monitor.stop()
+        await ssh_client.disconnect()
+
+    def add_server(self, server_config: dict):
+        """Add a new server to the configuration and start monitoring.
+
+        Args:
+            server_config: Dictionary with name, host, username, key_path
+        """
+        # Add to config
+        self.config["servers"].append(server_config)
+
+        # Get configuration values
+        monitoring_config = self.config.get("monitoring", {})
+        display_config = self.config.get("display", {})
+
+        poll_interval = monitoring_config.get("poll_interval", 2.0)
+        connection_timeout = monitoring_config.get("connection_timeout", 10)
+        max_retries = monitoring_config.get("max_retries", 3)
+        retry_delay = monitoring_config.get("retry_delay", 5)
+
+        low_threshold = display_config.get("low_threshold", 30)
+        medium_threshold = display_config.get("medium_threshold", 70)
+        start_collapsed = display_config.get("start_collapsed", False)
+
+        # Create components
+        srv_config = ServerConfig(
+            name=server_config["name"],
+            host=server_config["host"],
+            username=server_config["username"],
+            key_path=server_config["key_path"],
+        )
+
+        ssh_client = SSHClient(
+            config=srv_config,
+            connection_timeout=connection_timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+        )
+        self.ssh_clients.append(ssh_client)
+
+        monitor = CPUMonitor(ssh_client=ssh_client, poll_interval=poll_interval)
+        self.monitors.append(monitor)
+
+        widget = ServerWidget(
+            server_name=srv_config.name,
+            low_threshold=low_threshold,
+            medium_threshold=medium_threshold,
+            start_collapsed=start_collapsed,
+        )
+        self.server_widgets.append(widget)
+
+        # Add widget to UI
+        if self.ui_app:
+            self.ui_app.add_server_widget(widget)
+
+        # Start monitoring
+        asyncio.create_task(self._start_server_monitoring(ssh_client, monitor))
+
+        # Save config
+        self.save_config()
+        logger.info(f"Added server: {srv_config.name}")
+
+    async def _start_server_monitoring(self, ssh_client: SSHClient, monitor: CPUMonitor):
+        """Start monitoring for a new server."""
+        await ssh_client.connect()
+        await monitor.start()
+
     async def ui_update_loop(self):
         """Background task to update UI with latest metrics."""
         ui_refresh_interval = self.config.get("monitoring", {}).get("ui_refresh_interval", 0.5)
@@ -204,8 +314,12 @@ class CPUMonitoringApp:
             # Start UI update task
             self._ui_update_task = asyncio.create_task(self.ui_update_loop())
 
-            # Run the TUI app
-            self.ui_app = MonitoringApp(server_widgets=self.server_widgets)
+            # Run the TUI app with callbacks for server management
+            self.ui_app = MonitoringApp(
+                server_widgets=self.server_widgets,
+                on_delete_server=self.delete_server,
+                on_add_server=self.add_server,
+            )
             await self.ui_app.run_async()
 
         except KeyboardInterrupt:
