@@ -1,0 +1,204 @@
+"""Tests for CPU monitor module."""
+
+import asyncio
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from src.monitor import CPUMonitor, ServerMetrics, CPUCore
+from src.ssh_client import SSHClient, ServerConfig, ConnectionStatus
+
+
+@pytest.fixture
+def server_config():
+    """Create a test server configuration."""
+    return ServerConfig(
+        name="test-server", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"
+    )
+
+
+@pytest.fixture
+def ssh_client(server_config):
+    """Create a mock SSH client."""
+    client = SSHClient(config=server_config)
+    client.status = ConnectionStatus(connected=True)
+    return client
+
+
+@pytest.fixture
+def cpu_monitor(ssh_client):
+    """Create a CPU monitor instance."""
+    return CPUMonitor(ssh_client=ssh_client, poll_interval=0.1)
+
+
+@pytest.mark.asyncio
+async def test_monitor_initialization(cpu_monitor, ssh_client):
+    """Test CPU monitor initialization."""
+    assert cpu_monitor.ssh_client == ssh_client
+    assert cpu_monitor.poll_interval == 0.1
+    assert not cpu_monitor._running
+
+
+@pytest.mark.asyncio
+async def test_start_stop_monitoring(cpu_monitor):
+    """Test starting and stopping the monitor."""
+    await cpu_monitor.start()
+    assert cpu_monitor._running
+    assert cpu_monitor._task is not None
+
+    await cpu_monitor.stop()
+    assert not cpu_monitor._running
+
+
+@pytest.mark.asyncio
+async def test_parse_proc_stat(cpu_monitor):
+    """Test parsing /proc/stat output."""
+    proc_stat_output = """cpu  1000 200 300 5000 100 0 50 0 0 0
+cpu0 250 50 75 1250 25 0 12 0 0 0
+cpu1 250 50 75 1250 25 0 13 0 0 0
+cpu2 250 50 75 1250 25 0 12 0 0 0
+cpu3 250 50 75 1250 25 0 13 0 0 0
+"""
+
+    stats = cpu_monitor._parse_proc_stat(proc_stat_output)
+
+    assert len(stats) == 4
+    assert 0 in stats
+    assert 1 in stats
+    assert 2 in stats
+    assert 3 in stats
+
+    # Check core 0 values
+    assert stats[0]["user"] == 250
+    assert stats[0]["nice"] == 50
+    assert stats[0]["system"] == 75
+    assert stats[0]["idle"] == 1250
+    assert stats[0]["iowait"] == 25
+
+
+@pytest.mark.asyncio
+async def test_calculate_cpu_usage(cpu_monitor):
+    """Test CPU usage calculation."""
+    prev = {
+        "user": 1000,
+        "nice": 100,
+        "system": 200,
+        "idle": 8000,
+        "iowait": 100,
+        "irq": 0,
+        "softirq": 0,
+    }
+
+    curr = {
+        "user": 1200,  # +200
+        "nice": 150,  # +50
+        "system": 250,  # +50
+        "idle": 8300,  # +300
+        "iowait": 150,  # +50
+        "irq": 0,
+        "softirq": 0,
+    }
+
+    # Total diff: 200+50+50+300+50 = 650
+    # Idle diff: 300+50 = 350
+    # Active: 650-350 = 300
+    # Usage: 300/650 = ~46.15%
+
+    usage = cpu_monitor._calculate_cpu_usage(prev, curr)
+
+    assert 45.0 < usage < 47.0
+
+
+@pytest.mark.asyncio
+async def test_collect_cpu_metrics_disconnected(cpu_monitor, ssh_client):
+    """Test collecting metrics when disconnected."""
+    ssh_client.ensure_connected = AsyncMock(return_value=False)
+    ssh_client.status = ConnectionStatus(connected=False, error_message="Connection failed")
+
+    # The monitor loop would handle this, but we're testing _collect_cpu_metrics directly
+    # which doesn't check ensure_connected, so we need to make execute_command return None
+    ssh_client.execute_command = AsyncMock(return_value=None)
+
+    metrics = await cpu_monitor._collect_cpu_metrics()
+
+    assert not metrics.connected
+    assert metrics.error_message == "Failed to read CPU stats"
+    assert len(metrics.cores) == 0
+
+
+@pytest.mark.asyncio
+async def test_collect_cpu_metrics_success(cpu_monitor, ssh_client):
+    """Test successful CPU metrics collection."""
+    proc_stat_first = """cpu  1000 200 300 5000 100 0 50 0 0 0
+cpu0 250 50 75 1250 25 0 12 0 0 0
+cpu1 250 50 75 1250 25 0 13 0 0 0
+"""
+
+    proc_stat_second = """cpu  1200 220 350 5300 120 0 55 0 0 0
+cpu0 300 55 87 1300 30 0 14 0 0 0
+cpu1 300 55 88 1300 30 0 14 0 0 0
+"""
+
+    ssh_client.execute_command = AsyncMock(side_effect=[proc_stat_first, proc_stat_second])
+
+    # First collection (no previous data)
+    metrics1 = await cpu_monitor._collect_cpu_metrics()
+    assert metrics1.connected
+    assert len(metrics1.cores) == 2
+    assert metrics1.cores[0].usage_percent == 0.0  # First reading
+
+    # Second collection (with previous data)
+    metrics2 = await cpu_monitor._collect_cpu_metrics()
+    assert metrics2.connected
+    assert len(metrics2.cores) == 2
+    assert metrics2.cores[0].usage_percent > 0.0  # Should have calculated usage
+
+
+@pytest.mark.asyncio
+async def test_get_metrics(cpu_monitor):
+    """Test getting the latest metrics."""
+    # Initially None
+    metrics = await cpu_monitor.get_metrics()
+    assert metrics is None
+
+    # Set some metrics
+    test_metrics = ServerMetrics(
+        server_name="test",
+        timestamp=1234567890.0,
+        cores=[CPUCore(core_id=0, usage_percent=50.0)],
+        overall_usage=50.0,
+        connected=True,
+    )
+
+    cpu_monitor._latest_metrics = test_metrics
+
+    metrics = await cpu_monitor.get_metrics()
+    assert metrics == test_metrics
+
+
+@pytest.mark.asyncio
+async def test_monitor_loop_integration(cpu_monitor, ssh_client):
+    """Test the monitoring loop integration."""
+    proc_stat_output = """cpu  1000 200 300 5000 100 0 50 0 0 0
+cpu0 250 50 75 1250 25 0 12 0 0 0
+cpu1 250 50 75 1250 25 0 13 0 0 0
+"""
+
+    ssh_client.ensure_connected = AsyncMock(return_value=True)
+    ssh_client.execute_command = AsyncMock(return_value=proc_stat_output)
+
+    # Start monitoring
+    await cpu_monitor.start()
+
+    # Wait for at least one poll cycle
+    await asyncio.sleep(0.2)
+
+    # Get metrics
+    metrics = await cpu_monitor.get_metrics()
+
+    assert metrics is not None
+    assert metrics.connected
+    assert len(metrics.cores) == 2
+
+    # Stop monitoring
+    await cpu_monitor.stop()

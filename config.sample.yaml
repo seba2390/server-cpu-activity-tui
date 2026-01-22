@@ -1,0 +1,53 @@
+# Sample Configuration Template
+# Copy this to config.yaml and customize for your environment
+
+servers:
+  # Server 1 - Example production server
+  - name: "Production Web Server"
+    host: "192.168.1.100"
+    username: "ubuntu"
+    key_path: "~/.ssh/production-key.pem"
+
+  # Server 2 - Example database server
+  - name: "Database Server"
+    host: "192.168.1.101"
+    username: "ubuntu"
+    key_path: "~/.ssh/production-key.pem"
+
+  # Server 3 - Example with different key
+  - name: "Development Server"
+    host: "dev.example.com"
+    username: "developer"
+    key_path: "~/.ssh/dev-key.pem"
+
+# Monitoring Configuration
+monitoring:
+  # How often to poll CPU data from servers (seconds)
+  # Lower = more real-time, Higher = less network traffic
+  poll_interval: 2.0
+
+  # How often to refresh the UI display (seconds)
+  # Should be <= poll_interval for smooth updates
+  ui_refresh_interval: 0.5
+
+  # SSH connection timeout (seconds)
+  connection_timeout: 10
+
+  # Maximum number of connection retry attempts
+  max_retries: 3
+
+  # Delay between retry attempts (seconds)
+  retry_delay: 5
+
+# Display Configuration
+display:
+  # CPU usage thresholds for color coding
+  low_threshold: 30        # Usage below this is GREEN
+  medium_threshold: 70     # Usage between low and medium is YELLOW
+                          # Usage above medium is RED
+
+  # Show detailed per-core statistics
+  show_detailed_stats: true
+
+  # Start with all servers collapsed (false = expanded by default)
+  start_collapsed: false
