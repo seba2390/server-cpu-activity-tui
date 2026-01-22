@@ -202,3 +202,195 @@ cpu1 250 50 75 1250 25 0 13 0 0 0
 
     # Stop monitoring
     await cpu_monitor.stop()
+
+
+@pytest.mark.asyncio
+async def test_parse_proc_stat_malformed_line():
+    """Test parsing /proc/stat with malformed lines."""
+    from src.monitor import CPUMonitor
+    from src.ssh_client import SSHClient, ServerConfig
+
+    config = ServerConfig(
+        name="test", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"
+    )
+    client = SSHClient(config=config)
+    monitor = CPUMonitor(ssh_client=client)
+
+    # Include a malformed line
+    proc_stat_output = """cpu  1000 200 300 5000 100 0 50 0 0 0
+cpu0 250 50 75 1250 25 0 12 0 0 0
+cpuX invalid data
+cpu1 250 50 75 1250 25 0 13 0 0 0
+"""
+
+    stats = monitor._parse_proc_stat(proc_stat_output)
+
+    # Should parse valid cores and skip invalid ones
+    assert len(stats) == 2
+    assert 0 in stats
+    assert 1 in stats
+
+
+@pytest.mark.asyncio
+async def test_parse_proc_stat_incomplete_data():
+    """Test parsing /proc/stat with incomplete CPU data."""
+    from src.monitor import CPUMonitor
+    from src.ssh_client import SSHClient, ServerConfig
+
+    config = ServerConfig(
+        name="test", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"
+    )
+    client = SSHClient(config=config)
+    monitor = CPUMonitor(ssh_client=client)
+
+    # Include a line with insufficient fields
+    proc_stat_output = """cpu  1000 200 300 5000 100 0 50 0 0 0
+cpu0 250 50
+cpu1 250 50 75 1250 25 0 13 0 0 0
+"""
+
+    stats = monitor._parse_proc_stat(proc_stat_output)
+
+    # Should parse only valid core
+    assert len(stats) == 1
+    assert 1 in stats
+
+
+@pytest.mark.asyncio
+async def test_calculate_cpu_usage_zero_total_diff(cpu_monitor):
+    """Test CPU usage calculation with zero total diff."""
+    prev = {
+        "user": 1000,
+        "nice": 100,
+        "system": 200,
+        "idle": 8000,
+        "iowait": 100,
+        "irq": 0,
+        "softirq": 0,
+    }
+
+    # Same as prev (no time passed)
+    curr = prev.copy()
+
+    usage = cpu_monitor._calculate_cpu_usage(prev, curr)
+
+    # Should return 0 when no time has passed
+    assert usage == 0.0
+
+
+@pytest.mark.asyncio
+async def test_calculate_cpu_usage_100_percent():
+    """Test CPU usage calculation at 100%."""
+    from src.monitor import CPUMonitor
+    from src.ssh_client import SSHClient, ServerConfig
+
+    config = ServerConfig(
+        name="test", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"
+    )
+    client = SSHClient(config=config)
+    monitor = CPUMonitor(ssh_client=client)
+
+    prev = {
+        "user": 1000,
+        "nice": 0,
+        "system": 0,
+        "idle": 0,
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+    }
+
+    curr = {
+        "user": 2000,  # +1000, all active
+        "nice": 0,
+        "system": 0,
+        "idle": 0,  # No idle time
+        "iowait": 0,
+        "irq": 0,
+        "softirq": 0,
+    }
+
+    usage = monitor._calculate_cpu_usage(prev, curr)
+
+    # Should be 100% (or close due to clamping)
+    assert usage == 100.0
+
+
+@pytest.mark.asyncio
+async def test_monitor_stop_when_not_running(cpu_monitor):
+    """Test stopping monitor when not running."""
+    assert not cpu_monitor._running
+
+    # Should handle gracefully
+    await cpu_monitor.stop()
+
+    assert not cpu_monitor._running
+
+
+@pytest.mark.asyncio
+async def test_monitor_start_when_already_running(cpu_monitor):
+    """Test starting monitor when already running."""
+    await cpu_monitor.start()
+    assert cpu_monitor._running
+
+    first_task = cpu_monitor._task
+
+    # Try to start again
+    await cpu_monitor.start()
+
+    # Should not create a new task
+    assert cpu_monitor._task == first_task
+
+    await cpu_monitor.stop()
+
+
+@pytest.mark.asyncio
+async def test_collect_cpu_metrics_with_no_previous_stats():
+    """Test collecting metrics on first run (no previous stats)."""
+    from src.monitor import CPUMonitor
+    from src.ssh_client import SSHClient, ServerConfig
+
+    config = ServerConfig(
+        name="test", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"
+    )
+    client = SSHClient(config=config)
+    monitor = CPUMonitor(ssh_client=client)
+
+    proc_stat_output = """cpu  1000 200 300 5000 100 0 50 0 0 0
+cpu0 250 50 75 1250 25 0 12 0 0 0
+cpu1 250 50 75 1250 25 0 13 0 0 0
+"""
+
+    client.execute_command = AsyncMock(return_value=proc_stat_output)
+
+    metrics = await monitor._collect_cpu_metrics()
+
+    # First reading should have 0% usage
+    assert all(core.usage_percent == 0.0 for core in metrics.cores)
+    assert metrics.overall_usage == 0.0
+    assert len(metrics.cores) == 2
+
+
+@pytest.mark.asyncio
+async def test_monitor_loop_exception_handling(cpu_monitor, ssh_client):
+    """Test monitor loop continues after exceptions."""
+    ssh_client.ensure_connected = AsyncMock(return_value=True)
+
+    # First call raises exception, second succeeds
+    proc_stat_output = """cpu  1000 200 300 5000 100 0 50 0 0 0
+cpu0 250 50 75 1250 25 0 12 0 0 0
+"""
+
+    ssh_client.execute_command = AsyncMock(
+        side_effect=[Exception("Test error"), proc_stat_output]
+    )
+
+    await cpu_monitor.start()
+
+    # Wait for a couple poll cycles
+    await asyncio.sleep(0.3)
+
+    # Should still be running
+    assert cpu_monitor._running
+
+    await cpu_monitor.stop()

@@ -58,7 +58,7 @@ ifeq ($(VENV_EXISTS), 0)
 	@$(MAKE) setup
 endif
 	@echo "Running test suite..."
-	$(VENV_BIN)/pytest
+	$(VENV_BIN)/pytest -v --tb=short --color=yes --timeout=10
 
 # Run linters
 lint:

@@ -165,3 +165,128 @@ async def test_ensure_connected_reconnect(ssh_client):
 
             assert result is True
             assert ssh_client._connection is not None
+
+
+@pytest.mark.asyncio
+async def test_connect_retry_logic(ssh_client):
+    """Test connection retry logic on failures."""
+    with patch.object(Path, "exists", return_value=True):
+        # Simulate 2 failures then success
+        mock_conn = AsyncMock()
+        mock_conn.is_closed = Mock(return_value=False)
+
+        call_count = 0
+
+        async def mock_connect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise OSError("Connection refused")
+            return mock_conn
+
+        with patch("src.ssh_client.asyncssh.connect", new=mock_connect):
+            result = await ssh_client.connect()
+
+            assert result is True
+            assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_connect_exhausted_retries(ssh_client):
+    """Test connection when all retries are exhausted."""
+    with patch.object(Path, "exists", return_value=True):
+        # All attempts fail
+        with patch(
+            "src.ssh_client.asyncssh.connect", side_effect=OSError("Connection refused")
+        ):
+            result = await ssh_client.connect()
+
+            assert result is False
+            assert not ssh_client.status.connected
+
+
+@pytest.mark.asyncio
+async def test_disconnect_when_not_connected(ssh_client):
+    """Test disconnecting when not connected."""
+    assert ssh_client._connection is None
+
+    # Should handle gracefully
+    await ssh_client.disconnect()
+
+    assert ssh_client._connection is None
+
+
+@pytest.mark.asyncio
+async def test_execute_command_ssh_error(ssh_client):
+    """Test command execution with SSH error."""
+    mock_connection = AsyncMock()
+    mock_connection.is_closed = Mock(return_value=False)
+
+    # Simulate SSH error
+    from asyncssh import Error
+
+    mock_connection.run = AsyncMock(side_effect=Error("test",  reason="Connection lost"))
+
+    ssh_client._connection = mock_connection
+
+    result = await ssh_client.execute_command("echo test")
+
+    assert result is None
+    # Connection should be marked as disconnected
+    assert ssh_client._connection is None
+    assert not ssh_client.status.connected
+
+
+@pytest.mark.asyncio
+async def test_execute_command_strips_output(ssh_client):
+    """Test command execution strips whitespace from output."""
+    mock_result = Mock()
+    mock_result.stdout = "  test output  \n\n"
+
+    mock_connection = AsyncMock()
+    mock_connection.run = AsyncMock(return_value=mock_result)
+    mock_connection.is_closed = Mock(return_value=False)
+
+    ssh_client._connection = mock_connection
+
+    result = await ssh_client.execute_command("echo test")
+
+    assert result == "test output"
+
+
+@pytest.mark.asyncio
+async def test_is_connected_with_closed_connection(ssh_client):
+    """Test is_connected with a closed connection."""
+    mock_connection = AsyncMock()
+    mock_connection.is_closed = Mock(return_value=True)
+
+    ssh_client._connection = mock_connection
+
+    assert await ssh_client.is_connected() is False
+
+
+@pytest.mark.asyncio
+async def test_ensure_connected_when_reconnect_fails(ssh_client):
+    """Test ensure_connected when reconnection fails."""
+    # Connection is None, so it will try to reconnect
+    ssh_client._connection = None
+
+    with patch.object(ssh_client, "connect", return_value=False):
+        result = await ssh_client.ensure_connected()
+
+        assert result is False
+
+
+@pytest.mark.asyncio
+async def test_connect_already_connected(ssh_client):
+    """Test connecting when already connected."""
+    mock_connection = AsyncMock()
+    mock_connection.is_closed = Mock(return_value=False)
+
+    ssh_client._connection = mock_connection
+
+    result = await ssh_client.connect()
+
+    # Should return True immediately without creating new connection
+    assert result is True
+    assert ssh_client._connection == mock_connection
