@@ -870,16 +870,16 @@ def test_history_plot_widget_render_with_data():
         (current_time, 50.0),
     ]
 
-    widget = HistoryPlotWidget(history_window=60)
+    widget = HistoryPlotWidget(history_window=60, poll_interval=2.0)
     widget.update_history(history_data)
 
     rendered = widget.render()
 
-    # Should show the plot title and time axis
+    # Should show the plot title and window width label
     assert "AVG CPU UTILIZATION" in rendered
-    assert "now" in rendered
-    # Should have filled area plot characters
-    assert any(char in rendered for char in ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"])
+    assert "window width:" in rendered
+    # Should have braille plot characters (check for cyan color which is used in braille plots)
+    assert "[cyan]" in rendered
 
 
 def test_history_plot_widget_update():
@@ -926,3 +926,40 @@ def test_server_widget_update_history():
 
     # This should not raise an error even if history_widget is None
     widget.update_history(history_data)
+
+
+# Tests for braille visualization
+def test_history_plot_widget_braille_line_plot():
+    """Test Braille line plot generation."""
+    widget = HistoryPlotWidget(history_window=60, poll_interval=2.0)
+
+    usages = [25.0, 50.0, 75.0, 100.0, 50.0]
+    plot_rows = widget._create_braille_line_plot(usages, width=5, height=4)
+
+    assert len(plot_rows) == 4
+    assert all(isinstance(row, str) for row in plot_rows)
+
+    # Check for cyan color (used in braille plot)
+    combined = "".join(plot_rows)
+    assert "[cyan]" in combined
+
+
+def test_history_plot_widget_render_braille():
+    """Test rendering with braille style."""
+    import time
+    current_time = time.time()
+    history_data = [
+        (current_time - 20, 30.0),
+        (current_time - 15, 45.0),
+        (current_time - 10, 60.0),
+        (current_time - 5, 75.0),
+        (current_time, 85.0),
+    ]
+
+    # Test braille style
+    widget_braille = HistoryPlotWidget(history_window=60, poll_interval=2.0)
+    widget_braille.update_history(history_data)
+    rendered_braille = widget_braille.render()
+    assert "AVG CPU UTILIZATION" in rendered_braille
+    assert "BRAILLE" not in rendered_braille  # No longer shows style in title
+    assert isinstance(rendered_braille, str)

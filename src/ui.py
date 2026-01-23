@@ -660,16 +660,34 @@ class HistoryPlotWidget(Static):
         [0x40, 0x80],  # Row 3: dots 7, 8
     ]
 
-    def __init__(self, history_window: int = 60, **kwargs):
+    def __init__(self, history_window: int = 60, plot_style: str = "braille",
+                 low_threshold: float = 30.0, medium_threshold: float = 70.0,
+                 poll_interval: float = 2.0, **kwargs):
         """Initialize history plot widget.
 
         Args:
             history_window: Time window in seconds
+            plot_style: Visualization style (area, gradient, braille, sparkline, layered)
+            low_threshold: CPU usage threshold for low/medium boundary
+            medium_threshold: CPU usage threshold for medium/high boundary
+            poll_interval: Polling interval in seconds
         """
         super().__init__(**kwargs)
         self.history_window = history_window
+        self.plot_style = plot_style
+        self.low_threshold = low_threshold
+        self.medium_threshold = medium_threshold
+        self.poll_interval = poll_interval
         self.history_data: list[tuple[float, float]] = []
-        logger.info(f"HistoryPlotWidget initialized with history_window={history_window}s")
+
+        # Calculate plot width based on history_window and poll_interval
+        # Each braille character shows 2 data points, so width = num_points / 2
+        num_data_points = int(history_window / poll_interval)
+        self.plot_width = num_data_points // 2  # 2 dots per character
+
+        logger.info(f"HistoryPlotWidget initialized with history_window={history_window}s, "
+                   f"poll_interval={poll_interval}s, plot_width={self.plot_width} chars, "
+                   f"max_points={num_data_points}, plot_style={plot_style}")
 
     def update_history(self, history_data: list[tuple[float, float]]):
         """Update history data.
@@ -684,21 +702,8 @@ class HistoryPlotWidget(Static):
         self.history_data = history_data
         self.refresh()
 
-    def _get_color_for_usage(self, usage: float) -> str:
-        """Get color based on CPU usage level."""
-        if usage < 30:
-            return "green"
-        elif usage < 50:
-            return "green3"
-        elif usage < 70:
-            return "yellow"
-        elif usage < 85:
-            return "orange1"
-        else:
-            return "red"
-
-    def _create_filled_area_plot(self, usages: list[float], width: int, height: int) -> list[str]:
-        """Create a filled area chart with gradient coloring.
+    def _create_braille_line_plot(self, usages: list[float], width: int, height: int) -> list[str]:
+        """Create a high-resolution line graph using Braille patterns.
 
         Args:
             usages: List of usage percentages
@@ -711,45 +716,45 @@ class HistoryPlotWidget(Static):
         if not usages:
             return [" " * width] * height
 
-        # Resample data to fit plot width
-        if len(usages) > width:
-            step = len(usages) / width
-            sampled = [usages[int(i * step)] for i in range(width)]
-        elif len(usages) < width:
-            # Stretch data to fill width
-            sampled = []
-            for i in range(width):
-                idx = int(i * len(usages) / width)
-                sampled.append(usages[min(idx, len(usages) - 1)])
-        else:
-            sampled = usages
+        # Braille gives us 2x horizontal and 4x vertical resolution
+        braille_width = width
+        braille_height = height * 4  # Each character is 4 dots tall
 
-        # Block characters for smooth vertical fill
-        fill_blocks = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+        # Take only the last N points that fit in the plot (2 points per character)
+        # Don't resample - use actual data points for constant width
+        max_points = braille_width * 2
+        data_to_plot = usages[-max_points:] if len(usages) > max_points else usages
 
-        # Create the plot grid (row 0 = top = 100%, row height-1 = bottom = 0%)
+        # Initialize empty braille grid
+        braille_grid = [[0 for _ in range(braille_width)] for _ in range(height)]
+
+        # Plot the line from right to left (newest on right)
+        for i in range(len(data_to_plot)):
+            # Calculate position from right to left
+            # Start from the rightmost position and work backwards
+            point_index = len(data_to_plot) - 1 - i
+            x = braille_width - 1 - (i // 2)  # 2 columns per character, start from right
+            col_offset = 1 - (i % 2)  # Right (1) then left (0) column within character
+
+            # Convert usage to vertical position (0 = bottom, braille_height-1 = top)
+            y_pos = int((data_to_plot[point_index] / 100.0) * (braille_height - 1))
+            y_pos = braille_height - 1 - y_pos  # Flip for top-to-bottom
+
+            # Calculate character row and dot row within character
+            char_row = y_pos // 4
+            dot_row = y_pos % 4
+
+            if 0 <= char_row < height and 0 <= x < braille_width:
+                # Set the appropriate dot
+                braille_grid[char_row][x] |= self.BRAILLE_DOTS[dot_row][col_offset]
+
+        # Convert braille grid to strings with color
         rows = []
-        for row in range(height):
+        for row in braille_grid:
             row_str = ""
-            # Calculate the percentage range for this row
-            row_top_pct = 100.0 * (height - row) / height
-            row_bottom_pct = 100.0 * (height - row - 1) / height
-
-            for col, usage in enumerate(sampled):
-                # Use explicit blue color with rich markup
-                if usage >= row_top_pct:
-                    # Full block - usage is above this entire row
-                    row_str += "[blue]█[/blue]"
-                elif usage <= row_bottom_pct:
-                    # Empty - usage is below this entire row
-                    row_str += " "
-                else:
-                    # Partial fill - calculate which sub-block to use
-                    fill_ratio = (usage - row_bottom_pct) / (row_top_pct - row_bottom_pct)
-                    block_idx = int(fill_ratio * (len(fill_blocks) - 1))
-                    block_idx = max(0, min(len(fill_blocks) - 1, block_idx))
-                    row_str += f"[blue]{fill_blocks[block_idx]}[/blue]"
-
+            for dots in row:
+                char = chr(self.BRAILLE_BASE + dots)
+                row_str += f"[cyan]{char}[/cyan]"
             rows.append(row_str)
 
         return rows
@@ -758,15 +763,16 @@ class HistoryPlotWidget(Static):
         """Render the CPU history plot with enhanced visuals."""
         if not self.history_data or len(self.history_data) < 2:
             lines = []
-            lines.append("  [dim]┌" + "─" * 52 + "┐[/dim]")
+            border_width = self.plot_width + 2  # +2 for padding around title
+            lines.append("[dim]┌" + "─" * border_width + "┐[/dim]")
             for _ in range(6):
-                lines.append("  [dim]│[/dim]" + " " * 52 + "[dim]│[/dim]")
-            lines.append("  [dim]└" + "─" * 52 + "┘[/dim]")
-            lines.append("  [dim italic]  Collecting data... waiting for samples[/dim italic]")
+                lines.append("[dim]│[/dim]" + " " * border_width + "[dim]│[/dim]")
+            lines.append("[dim]└" + "─" * border_width + "┘[/dim]")
+            lines.append("[dim italic]  Collecting data... waiting for samples[/dim italic]")
             return "\n".join(lines)
 
         # Plot parameters
-        plot_width = 50
+        plot_width = self.plot_width
         plot_height = 6
 
         # Get usage values
@@ -781,8 +787,8 @@ class HistoryPlotWidget(Static):
         # Time range
         time_range = int(self.history_data[-1][0] - self.history_data[0][0]) if self.history_data else 0
 
-        # Create the filled area plot
-        plot_rows = self._create_filled_area_plot(usages, plot_width, plot_height)
+        # Create braille line plot
+        plot_rows = self._create_braille_line_plot(usages, plot_width, plot_height)
 
         # Build the complete plot with frame and Y-axis labels
         lines = []
@@ -790,24 +796,23 @@ class HistoryPlotWidget(Static):
         # Y-axis labels for each row
         y_labels = ["100%", " 80%", " 60%", " 40%", " 20%", "  0%"]
 
-        # Top border with title indicating average utilization
+        # Top border with title
         title = " AVG CPU UTILIZATION "
         left_border = "─" * ((plot_width - len(title)) // 2)
         right_border = "─" * (plot_width - len(title) - len(left_border))
-        lines.append(f"  [dim]     ┌{left_border}[/dim][bold dodger_blue2]{title}[/bold dodger_blue2][dim]{right_border}┐[/dim]")
+        lines.append(f"[dim]     ┌{left_border}[/dim][bold dodger_blue2]{title}[/bold dodger_blue2][dim]{right_border}┐[/dim]")
 
         # Plot rows with Y-axis
         for i, (label, row) in enumerate(zip(y_labels, plot_rows)):
-            lines.append(f"  [dim]{label} │[/dim]{row}[dim]│[/dim]")
+            lines.append(f"[dim]{label} │[/dim]{row}[dim]│[/dim]")
 
         # Bottom border
-        lines.append(f"  [dim]     └{'─' * plot_width}┘[/dim]")
+        lines.append(f"[dim]     └{'─' * plot_width}┘[/dim]")
 
-        # X-axis time labels
-        time_label_left = f"-{time_range}s"
-        time_label_right = "now"
-        spacing = plot_width - len(time_label_left) - len(time_label_right)
-        lines.append(f"  [dim]      {time_label_left}{' ' * spacing}{time_label_right}[/dim]")
+        # Window width label (centered)
+        window_label = f"window width: {self.history_window}s"
+        label_padding = (plot_width - len(window_label)) // 2
+        lines.append(f"[dim]      {' ' * label_padding}{window_label}[/dim]")
 
         return "\n".join(lines)
 
@@ -826,6 +831,8 @@ class ServerWidget(Static):
         medium_threshold: float = 70.0,
         start_collapsed: bool = False,
         history_window: int = 60,
+        plot_style: str = "braille",
+        poll_interval: float = 2.0,
         **kwargs,
     ):
         """Initialize server widget.
@@ -836,6 +843,8 @@ class ServerWidget(Static):
             medium_threshold: Threshold for medium usage
             start_collapsed: Whether to start in collapsed state
             history_window: Time window for history graph (seconds)
+            plot_style: Visualization style for CPU history plot
+            poll_interval: Polling interval in seconds
         """
         super().__init__(**kwargs)
         self.server_name = server_name
@@ -843,6 +852,8 @@ class ServerWidget(Static):
         self.medium_threshold = medium_threshold
         self.expanded = not start_collapsed
         self.history_window = history_window
+        self.plot_style = plot_style
+        self.poll_interval = poll_interval
 
         self.metrics: Optional[ServerMetrics] = None
         self.core_widgets: list[CPUCoreWidget] = []
@@ -884,7 +895,13 @@ class ServerWidget(Static):
                     # History Section with header
                     with Container(id=f"history-{safe_id}", classes="section-container") as self.history_container:
                         yield Static("[bold yellow]━━━ CPU HISTORY ━━━[/bold yellow]", classes="section-header")
-                        self.history_widget = HistoryPlotWidget(self.history_window)
+                        self.history_widget = HistoryPlotWidget(
+                            self.history_window,
+                            self.plot_style,
+                            self.low_threshold,
+                            self.medium_threshold,
+                            self.poll_interval
+                        )
                         yield self.history_widget
 
     def on_mount(self):
@@ -1143,11 +1160,13 @@ class MonitoringApp(App):
     MemoryWidget {
         padding: 0 1;
         height: auto;
+        text-align: center;
     }
 
     HistoryPlotWidget {
         padding: 0 1;
         height: auto;
+        text-align: center;
     }
 
     .content-layout {
