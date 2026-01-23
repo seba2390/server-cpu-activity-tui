@@ -579,7 +579,7 @@ class CPUCoreWidget(Static):
     def render(self) -> str:
         """Render the CPU core widget."""
         usage = self.usage_percent
-        bar_width = 30
+        bar_width = 15
         filled = int((usage / 100.0) * bar_width)
         bar = "█" * filled + "░" * (bar_width - filled)
 
@@ -629,7 +629,7 @@ class MemoryWidget(Static):
 
         mem = self.memory_info
         usage = mem.usage_percent
-        bar_width = 30
+        bar_width = 15
         filled = int((usage / 100.0) * bar_width)
         bar = "█" * filled + "░" * (bar_width - filled)
 
@@ -881,20 +881,20 @@ class ServerWidget(Static):
             with Horizontal(id=f"content-{safe_id}", classes="content-layout"):
                 # Left column: CPU Cores Section
                 with Container(id=f"cores-{safe_id}", classes="section-container left-column") as self.cores_container:
-                    yield Static("[bold cyan]━━━ CPU CORES ━━━[/bold cyan]", classes="section-header")
+                    yield Static("[bold dodger_blue2]━━━ CPU CORES ━━━[/bold dodger_blue2]", classes="section-header")
                     yield Container(id=f"cores-content-{safe_id}", classes="section-content")
 
                 # Right column: Memory and History stacked vertically
                 with Vertical(classes="right-column"):
                     # Memory Section with header
                     with Container(id=f"memory-{safe_id}", classes="section-container") as self.memory_container:
-                        yield Static("[bold magenta]━━━ MEMORY ━━━[/bold magenta]", classes="section-header")
+                        yield Static("[bold dodger_blue2]━━━ MEMORY ━━━[/bold dodger_blue2]", classes="section-header")
                         self.memory_widget = MemoryWidget(self.low_threshold, self.medium_threshold)
                         yield self.memory_widget
 
                     # History Section with header
                     with Container(id=f"history-{safe_id}", classes="section-container") as self.history_container:
-                        yield Static("[bold yellow]━━━ CPU HISTORY ━━━[/bold yellow]", classes="section-header")
+                        yield Static("[bold dodger_blue2]━━━ CPU HISTORY ━━━[/bold dodger_blue2]", classes="section-header")
                         self.history_widget = HistoryPlotWidget(
                             self.history_window,
                             self.plot_style,
