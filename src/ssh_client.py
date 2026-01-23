@@ -57,6 +57,9 @@ class SSHClient:
         self._lock = asyncio.Lock()
         self.status = ConnectionStatus(connected=False)
 
+        logger.info(f"SSHClient initialized for '{config.name}' ({config.host}): "
+                   f"timeout={connection_timeout}s, max_retries={max_retries}, retry_delay={retry_delay}s")
+
     async def connect(self) -> bool:
         """Establish SSH connection to the server.
 
@@ -65,9 +68,11 @@ class SSHClient:
         """
         async with self._lock:
             if self._connection is not None:
+                logger.info(f"{self.config.name}: Already connected, skipping connection attempt")
                 return True
 
             key_path = Path(self.config.key_path).expanduser()
+            logger.info(f"{self.config.name}: Preparing to connect - host={self.config.host}, user={self.config.username}, key={key_path}")
 
             if not key_path.exists():
                 error_msg = f"SSH key not found: {key_path}"
@@ -75,11 +80,12 @@ class SSHClient:
                 self.status = ConnectionStatus(connected=False, error_message=error_msg)
                 return False
 
+            logger.info(f"{self.config.name}: SSH key verified at: {key_path}")
+
             for attempt in range(self.max_retries):
                 try:
                     logger.info(
-                        f"{self.config.name}: Connecting to {self.config.host} "
-                        f"(attempt {attempt + 1}/{self.max_retries})"
+                        f"{self.config.name}: Connection attempt {attempt + 1}/{self.max_retries} to {self.config.host}"
                     )
 
                     self._connection = await asyncio.wait_for(
@@ -92,22 +98,22 @@ class SSHClient:
                         timeout=self.connection_timeout,
                     )
 
-                    logger.info(f"{self.config.name}: Connected successfully")
+                    logger.info(f"{self.config.name}: Successfully connected to {self.config.host} on attempt {attempt + 1}")
                     self.status = ConnectionStatus(connected=True)
                     return True
 
                 except asyncio.TimeoutError:
                     error_msg = f"Connection timeout after {self.connection_timeout}s"
-                    logger.warning(f"{self.config.name}: {error_msg}")
+                    logger.warning(f"{self.config.name}: Attempt {attempt + 1}/{self.max_retries} - {error_msg}")
                     self.status = ConnectionStatus(connected=False, error_message=error_msg)
 
                 except (asyncssh.Error, OSError) as e:
                     error_msg = f"Connection failed: {str(e)}"
-                    logger.warning(f"{self.config.name}: {error_msg}")
+                    logger.warning(f"{self.config.name}: Attempt {attempt + 1}/{self.max_retries} - {error_msg}")
                     self.status = ConnectionStatus(connected=False, error_message=error_msg)
 
                 if attempt < self.max_retries - 1:
-                    logger.info(f"{self.config.name}: Retrying in {self.retry_delay}s...")
+                    logger.info(f"{self.config.name}: Waiting {self.retry_delay}s before retry...")
                     await asyncio.sleep(self.retry_delay)
 
             logger.error(f"{self.config.name}: Failed to connect after {self.max_retries} attempts")
@@ -117,11 +123,14 @@ class SSHClient:
         """Close the SSH connection."""
         async with self._lock:
             if self._connection is not None:
+                logger.info(f"{self.config.name}: Disconnecting from {self.config.host}...")
                 self._connection.close()
                 await self._connection.wait_closed()
                 self._connection = None
                 self.status = ConnectionStatus(connected=False)
-                logger.info(f"{self.config.name}: Disconnected")
+                logger.info(f"{self.config.name}: Disconnected successfully")
+            else:
+                logger.info(f"{self.config.name}: Already disconnected, no action needed")
 
     async def execute_command(self, command: str) -> Optional[str]:
         """Execute a command on the remote server.
@@ -134,20 +143,28 @@ class SSHClient:
         """
         async with self._lock:
             if self._connection is None:
-                logger.error(f"{self.config.name}: Not connected")
+                logger.error(f"{self.config.name}: Cannot execute command - not connected")
                 return None
+
+            # Truncate command for logging if too long
+            cmd_display = command if len(command) <= 50 else command[:47] + "..."
+            logger.info(f"{self.config.name}: Executing command: {cmd_display}")
 
             try:
                 result = await self._connection.run(command, check=True)
+                output_length = len(result.stdout)
+                logger.info(f"{self.config.name}: Command executed successfully, output length: {output_length} bytes")
                 return result.stdout.strip()
 
             except asyncssh.ProcessError as e:
-                logger.error(f"{self.config.name}: Command failed: {command} - {e.stderr}")
+                stderr_preview = e.stderr[:100] if len(e.stderr) <= 100 else e.stderr[:97] + "..."
+                logger.error(f"{self.config.name}: Command failed: {cmd_display} - stderr: {stderr_preview}")
                 return None
 
             except asyncssh.Error as e:
                 logger.error(f"{self.config.name}: SSH error during command execution: {e}")
                 # Connection might be broken, mark as disconnected
+                logger.warning(f"{self.config.name}: Marking connection as lost due to SSH error")
                 self._connection = None
                 self.status = ConnectionStatus(connected=False, error_message="Connection lost")
                 return None
@@ -159,7 +176,10 @@ class SSHClient:
             True if connected, False otherwise
         """
         async with self._lock:
-            return self._connection is not None and not self._connection.is_closed()
+            is_conn = self._connection is not None and not self._connection.is_closed()
+            if not is_conn and self._connection is not None:
+                logger.warning(f"{self.config.name}: Connection object exists but is closed")
+            return is_conn
 
     async def ensure_connected(self) -> bool:
         """Ensure connection is active, reconnecting if necessary.
@@ -170,4 +190,10 @@ class SSHClient:
         if await self.is_connected():
             return True
 
-        return await self.connect()
+        logger.info(f"{self.config.name}: Connection not active, attempting to reconnect...")
+        result = await self.connect()
+        if result:
+            logger.info(f"{self.config.name}: Reconnection successful")
+        else:
+            logger.warning(f"{self.config.name}: Reconnection failed")
+        return result

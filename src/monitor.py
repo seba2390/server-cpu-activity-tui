@@ -79,20 +79,25 @@ class CPUMonitor:
         # CPU history: list of (timestamp, overall_usage) tuples
         self._cpu_history: list[tuple[float, float]] = []
 
+        logger.info(f"CPUMonitor initialized for server '{ssh_client.config.name}': poll_interval={poll_interval}s, history_window={history_window}s")
+
     async def start(self):
         """Start monitoring CPU metrics."""
         if self._running:
+            logger.warning(f"{self.ssh_client.config.name}: Monitor already running, skipping start")
             return
 
         self._running = True
         self._task = asyncio.create_task(self._monitor_loop())
-        logger.info(f"{self.ssh_client.config.name}: CPU monitoring started")
+        logger.info(f"{self.ssh_client.config.name}: CPU monitoring started (poll_interval={self.poll_interval}s)")
 
     async def stop(self):
         """Stop monitoring CPU metrics."""
         if not self._running:
+            logger.warning(f"{self.ssh_client.config.name}: Monitor not running, skipping stop")
             return
 
+        logger.info(f"{self.ssh_client.config.name}: Stopping CPU monitoring...")
         self._running = False
 
         if self._task:
@@ -100,6 +105,7 @@ class CPUMonitor:
             try:
                 await self._task
             except asyncio.CancelledError:
+                logger.info(f"{self.ssh_client.config.name}: Monitor task cancelled successfully")
                 pass
 
         logger.info(f"{self.ssh_client.config.name}: CPU monitoring stopped")
@@ -124,10 +130,16 @@ class CPUMonitor:
 
     async def _monitor_loop(self):
         """Main monitoring loop that periodically collects CPU data."""
+        logger.info(f"{self.ssh_client.config.name}: Monitor loop started")
+        loop_count = 0
+
         while self._running:
             try:
+                loop_count += 1
+
                 # Ensure SSH connection is active
                 if not await self.ssh_client.ensure_connected():
+                    logger.warning(f"{self.ssh_client.config.name}: Not connected, creating disconnected metrics (loop {loop_count})")
                     async with self._lock:
                         self._latest_metrics = ServerMetrics(
                             server_name=self.ssh_client.config.name,
@@ -142,6 +154,7 @@ class CPUMonitor:
                     continue
 
                 # Collect CPU metrics
+                logger.info(f"{self.ssh_client.config.name}: Collecting CPU metrics (loop {loop_count})")
                 metrics = await self._collect_cpu_metrics()
 
                 async with self._lock:
@@ -154,16 +167,25 @@ class CPUMonitor:
 
                         # Trim history to keep only data within the window
                         cutoff_time = current_time - self.history_window
+                        before_trim = len(self._cpu_history)
                         self._cpu_history = [(t, u) for t, u in self._cpu_history if t >= cutoff_time]
+                        after_trim = len(self._cpu_history)
+
+                        if loop_count % 20 == 0:  # Log every 20 loops to avoid spam
+                            logger.info(f"{self.ssh_client.config.name}: Metrics collected: cores={len(metrics.cores)}, "
+                                      f"overall_usage={metrics.overall_usage:.1f}%, history_points={after_trim} (trimmed {before_trim-after_trim})")
 
             except asyncio.CancelledError:
+                logger.info(f"{self.ssh_client.config.name}: Monitor loop cancelled")
                 break
             except Exception as e:
                 logger.error(
-                    f"{self.ssh_client.config.name}: Error in monitoring loop: {e}", exc_info=True
+                    f"{self.ssh_client.config.name}: Error in monitoring loop (loop {loop_count}): {e}", exc_info=True
                 )
 
             await asyncio.sleep(self.poll_interval)
+
+        logger.info(f"{self.ssh_client.config.name}: Monitor loop exited after {loop_count} iterations")
 
     async def _collect_cpu_metrics(self) -> ServerMetrics:
         """Collect CPU metrics from the remote server.
@@ -172,6 +194,8 @@ class CPUMonitor:
             ServerMetrics with current CPU usage data
         """
         try:
+            logger.info(f"{self.ssh_client.config.name}: Executing remote commands for CPU and memory data")
+
             # Read /proc/stat to get CPU usage
             cpu_output = await self.ssh_client.execute_command("cat /proc/stat")
 
@@ -179,6 +203,7 @@ class CPUMonitor:
             mem_output = await self.ssh_client.execute_command("cat /proc/meminfo")
 
             if cpu_output is None:
+                logger.warning(f"{self.ssh_client.config.name}: Failed to read CPU stats from remote server")
                 return ServerMetrics(
                     server_name=self.ssh_client.config.name,
                     timestamp=time.time(),
@@ -188,17 +213,27 @@ class CPUMonitor:
                     error_message="Failed to read CPU stats",
                 )
 
+            logger.info(f"{self.ssh_client.config.name}: Received CPU data, parsing /proc/stat...")
             # Parse /proc/stat output
             current_stats = self._parse_proc_stat(cpu_output)
+            logger.info(f"{self.ssh_client.config.name}: Parsed {len(current_stats)} CPU cores from /proc/stat")
 
             # Parse memory info
-            memory_info = self._parse_meminfo(mem_output) if mem_output else None
+            if mem_output:
+                logger.info(f"{self.ssh_client.config.name}: Parsing memory info from /proc/meminfo...")
+                memory_info = self._parse_meminfo(mem_output)
+                if memory_info:
+                    logger.info(f"{self.ssh_client.config.name}: Memory parsed: {memory_info.usage_percent:.1f}% used ({memory_info.used_mb/1024:.1f}GB/{memory_info.total_mb/1024:.1f}GB)")
+            else:
+                logger.warning(f"{self.ssh_client.config.name}: Failed to read memory info")
+                memory_info = None
 
             # Calculate CPU usage based on difference from previous reading
             cores = []
             total_usage = 0.0
 
             if self._prev_stats is not None:
+                logger.info(f"{self.ssh_client.config.name}: Calculating CPU usage deltas from previous stats")
                 for core_id, curr_stat in current_stats.items():
                     if core_id in self._prev_stats:
                         prev_stat = self._prev_stats[core_id]
@@ -217,6 +252,7 @@ class CPUMonitor:
                         total_usage += usage
             else:
                 # First reading, just create cores with 0% usage
+                logger.info(f"{self.ssh_client.config.name}: First reading, initializing cores with 0% usage")
                 for core_id in current_stats.keys():
                     cores.append(CPUCore(core_id=core_id, usage_percent=0.0))
 
@@ -225,6 +261,8 @@ class CPUMonitor:
 
             # Calculate overall usage
             overall_usage = total_usage / len(cores) if cores else 0.0
+
+            logger.info(f"{self.ssh_client.config.name}: Metrics collected successfully: {len(cores)} cores, overall_usage={overall_usage:.1f}%")
 
             return ServerMetrics(
                 server_name=self.ssh_client.config.name,
@@ -258,10 +296,14 @@ class CPUMonitor:
             Dictionary mapping core ID to CPU time statistics
         """
         stats = {}
+        lines_processed = 0
+        cores_found = 0
 
         for line in output.split("\n"):
             if not line.startswith("cpu"):
                 continue
+
+            lines_processed += 1
 
             if line.startswith("cpu "):
                 # Skip the aggregate line
@@ -269,11 +311,13 @@ class CPUMonitor:
 
             parts = line.split()
             if len(parts) < 5:
+                logger.warning(f"{self.ssh_client.config.name}: Skipping malformed CPU line: {line[:50]}")
                 continue
 
             # Extract core number from "cpuN"
             core_str = parts[0][3:]
             if not core_str.isdigit():
+                logger.warning(f"{self.ssh_client.config.name}: Invalid core identifier: {parts[0]}")
                 continue
 
             core_id = int(core_str)
@@ -289,10 +333,12 @@ class CPUMonitor:
                     "irq": int(parts[6]) if len(parts) > 6 else 0,
                     "softirq": int(parts[7]) if len(parts) > 7 else 0,
                 }
+                cores_found += 1
             except (ValueError, IndexError) as e:
-                logger.warning(f"Error parsing CPU stats for core {core_id}: {e}")
+                logger.warning(f"{self.ssh_client.config.name}: Error parsing CPU stats for core {core_id}: {e}")
                 continue
 
+        logger.info(f"{self.ssh_client.config.name}: Parsed /proc/stat: {lines_processed} lines processed, {cores_found} cores found")
         return stats
 
     def _calculate_cpu_usage(self, prev: dict[str, int], curr: dict[str, int]) -> float:
@@ -336,6 +382,7 @@ class CPUMonitor:
         """
         try:
             mem_values = {}
+            lines_processed = 0
 
             for line in output.split("\n"):
                 if ":" not in line:
@@ -350,6 +397,7 @@ class CPUMonitor:
 
                 try:
                     mem_values[key] = int(value_str)
+                    lines_processed += 1
                 except ValueError:
                     continue
 
@@ -360,6 +408,10 @@ class CPUMonitor:
             buffers_kb = mem_values.get("Buffers", 0)
             cached_kb = mem_values.get("Cached", 0)
 
+            if total_kb == 0:
+                logger.warning(f"{self.ssh_client.config.name}: MemTotal is 0, cannot calculate memory usage")
+                return None
+
             # Convert to MB
             total_mb = total_kb / 1024.0
             free_mb = free_kb / 1024.0
@@ -369,6 +421,9 @@ class CPUMonitor:
 
             used_mb = total_mb - available_mb
             usage_percent = (used_mb / total_mb * 100.0) if total_mb > 0 else 0.0
+
+            logger.info(f"{self.ssh_client.config.name}: Parsed /proc/meminfo: {lines_processed} values extracted, "
+                       f"total={total_mb:.0f}MB, used={used_mb:.0f}MB, usage={usage_percent:.1f}%")
 
             return MemoryInfo(
                 total_mb=total_mb,
@@ -381,5 +436,5 @@ class CPUMonitor:
             )
 
         except Exception as e:
-            logger.warning(f"Error parsing memory info: {e}")
+            logger.warning(f"{self.ssh_client.config.name}: Error parsing memory info: {e}")
             return None

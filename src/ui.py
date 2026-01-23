@@ -1,5 +1,6 @@
 """TUI (Terminal User Interface) components for CPU monitoring."""
 
+import logging
 import time
 from typing import Optional, Callable
 
@@ -11,6 +12,8 @@ from textual.reactive import reactive
 from textual.binding import Binding
 
 from .monitor import ServerMetrics, CPUCore, MemoryInfo
+
+logger = logging.getLogger(__name__)
 
 
 class ConfirmDeleteScreen(ModalScreen[bool]):
@@ -55,6 +58,7 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
     def __init__(self, server_name: str, **kwargs):
         super().__init__(**kwargs)
         self.server_name = server_name
+        logger.info(f"ConfirmDeleteScreen initialized for server: {server_name}")
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-dialog"):
@@ -65,12 +69,16 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
                 yield Button("No (n)", variant="primary", id="no-btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "yes-btn")
+        confirmed = event.button.id == "yes-btn"
+        logger.info(f"Delete confirmation for '{self.server_name}': {'confirmed' if confirmed else 'cancelled'}")
+        self.dismiss(confirmed)
 
     def action_confirm(self) -> None:
+        logger.info(f"Delete confirmed via keyboard (y) for server: {self.server_name}")
         self.dismiss(True)
 
     def action_cancel(self) -> None:
+        logger.info(f"Delete cancelled via keyboard (n/escape) for server: {self.server_name}")
         self.dismiss(False)
 
 
@@ -137,12 +145,15 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
                 yield Button("Cancel", variant="primary", id="cancel-btn")
 
     def on_mount(self) -> None:
+        logger.info("AddServerScreen mounted, focusing name input field")
         self.query_one("#input-name", Input).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "add-btn":
+            logger.info("Add server button pressed, submitting form")
             self._submit()
         else:
+            logger.info("Add server cancelled via button")
             self.dismiss(None)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -154,10 +165,14 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         username = self.query_one("#input-username", Input).value.strip()
         key_path = self.query_one("#input-keypath", Input).value.strip()
 
+        logger.info(f"Add server form submitted: name={name}, host={host}, username={username}, key_path={key_path}")
+
         if not all([name, host, username, key_path]):
+            logger.warning("Add server form submission failed: missing required fields")
             self.notify("All fields are required", severity="error")
             return
 
+        logger.info(f"Server configuration validated successfully: {name}")
         self.dismiss({
             "name": name,
             "host": host,
@@ -166,6 +181,7 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         })
 
     def action_cancel(self) -> None:
+        logger.info("Add server cancelled via keyboard (escape)")
         self.dismiss(None)
 
 
@@ -189,6 +205,7 @@ class CPUCoreWidget(Static):
         self.low_threshold = low_threshold
         self.medium_threshold = medium_threshold
         self.usage_percent = core.usage_percent
+        logger.info(f"CPUCoreWidget initialized: core_id={core.core_id}, usage={core.usage_percent:.1f}%")
 
     def update_core(self, core: CPUCore):
         """Update core data.
@@ -196,6 +213,7 @@ class CPUCoreWidget(Static):
         Args:
             core: Updated CPU core data
         """
+        logger.info(f"CPUCoreWidget updated: core_id={core.core_id}, usage={core.usage_percent:.1f}%")
         self.core = core
         self.usage_percent = core.usage_percent
         self.refresh()
@@ -231,6 +249,7 @@ class MemoryWidget(Static):
         self.low_threshold = low_threshold
         self.medium_threshold = medium_threshold
         self.memory_info: Optional[MemoryInfo] = None
+        logger.info(f"MemoryWidget initialized with thresholds: low={low_threshold}%, medium={medium_threshold}%")
 
     def update_memory(self, memory_info: Optional[MemoryInfo]):
         """Update memory data.
@@ -238,6 +257,10 @@ class MemoryWidget(Static):
         Args:
             memory_info: Updated memory information
         """
+        if memory_info:
+            logger.info(f"MemoryWidget updated: usage={memory_info.usage_percent:.1f}%, used={memory_info.used_mb/1024:.1f}GB/{memory_info.total_mb/1024:.1f}GB")
+        else:
+            logger.warning("MemoryWidget updated with no data")
         self.memory_info = memory_info
         self.refresh()
 
@@ -288,6 +311,7 @@ class HistoryPlotWidget(Static):
         super().__init__(**kwargs)
         self.history_window = history_window
         self.history_data: list[tuple[float, float]] = []
+        logger.info(f"HistoryPlotWidget initialized with history_window={history_window}s")
 
     def update_history(self, history_data: list[tuple[float, float]]):
         """Update history data.
@@ -295,6 +319,10 @@ class HistoryPlotWidget(Static):
         Args:
             history_data: List of (timestamp, usage) tuples
         """
+        data_points = len(history_data)
+        if data_points > 0:
+            time_span = history_data[-1][0] - history_data[0][0] if data_points >= 2 else 0
+            logger.info(f"HistoryPlotWidget updated: {data_points} data points over {time_span:.1f}s")
         self.history_data = history_data
         self.refresh()
 
@@ -470,6 +498,7 @@ class ServerWidget(Static):
         self._spinner_index = 0
         self._connection_start_time: Optional[float] = None
         self._retry_count = 0
+        logger.info(f"ServerWidget initialized: name={server_name}, expanded={self.expanded}, thresholds=(low={low_threshold}%, med={medium_threshold}%), history_window={history_window}s")
 
     def compose(self) -> ComposeResult:
         """Compose the server widget layout."""
@@ -502,6 +531,7 @@ class ServerWidget(Static):
 
     def on_mount(self):
         """Handle widget mount event."""
+        logger.info(f"ServerWidget mounted: {self.server_name}")
         self.refresh_display()
 
     def update_metrics(self, metrics: ServerMetrics):
@@ -510,13 +540,19 @@ class ServerWidget(Static):
         Args:
             metrics: Updated server metrics
         """
+        logger.info(f"ServerWidget updating metrics: server={self.server_name}, connected={metrics.connected}, cores={len(metrics.cores)}, overall_usage={metrics.overall_usage:.1f}%")
+
         self.metrics = metrics
 
         # Track connection state changes
         if metrics.connected:
+            if self._connection_start_time is not None:
+                elapsed = time.time() - self._connection_start_time
+                logger.info(f"Server '{self.server_name}' connected successfully after {elapsed:.1f}s")
             self._connection_start_time = None
             self._retry_count = 0
         elif self._connection_start_time is None:
+            logger.warning(f"Server '{self.server_name}' disconnected: {metrics.error_message}")
             self._connection_start_time = time.time()
 
         # Update or create core widgets
@@ -525,11 +561,16 @@ class ServerWidget(Static):
             cores_content = self.query_one(f"#cores-content-{safe_id}")
 
             # Remove excess core widgets
+            removed_count = 0
             while len(self.core_widgets) > len(metrics.cores):
                 widget = self.core_widgets.pop()
                 widget.remove()
+                removed_count += 1
+            if removed_count > 0:
+                logger.info(f"ServerWidget '{self.server_name}': removed {removed_count} excess core widgets")
 
             # Update existing or add new core widgets
+            added_count = 0
             for i, core in enumerate(metrics.cores):
                 if i < len(self.core_widgets):
                     self.core_widgets[i].update_core(core)
@@ -537,6 +578,9 @@ class ServerWidget(Static):
                     core_widget = CPUCoreWidget(core, self.low_threshold, self.medium_threshold)
                     self.core_widgets.append(core_widget)
                     cores_content.mount(core_widget)
+                    added_count += 1
+            if added_count > 0:
+                logger.info(f"ServerWidget '{self.server_name}': added {added_count} new core widgets")
 
         # Update memory widget
         if self.memory_widget and metrics.connected:
@@ -544,13 +588,13 @@ class ServerWidget(Static):
 
         # Note: history will be updated separately via update_history method
 
-        # Animate spinner for connecting state
-        self._spinner_index = (self._spinner_index + 1) % len(self.SPINNER_FRAMES)
+        # Refresh display to update UI
         self.refresh_display()
 
     def toggle_expanded(self):
         """Toggle expanded/collapsed state."""
         self.expanded = not self.expanded
+        logger.info(f"ServerWidget '{self.server_name}' toggled: expanded={self.expanded}")
         self.refresh_display()
     def update_history(self, history_data: list[tuple[float, float]]):
         """Update CPU history data.
@@ -566,6 +610,8 @@ class ServerWidget(Static):
         Args:
             selected: Whether this server is selected
         """
+        if selected != self.is_selected:
+            logger.info(f"ServerWidget '{self.server_name}' selection changed: {selected}")
         self.is_selected = selected
         self.refresh_display()
 
@@ -573,6 +619,9 @@ class ServerWidget(Static):
         """Refresh the display of this widget."""
         if not self.header_widget:
             return
+
+        # Animate spinner (increment for next refresh)
+        self._spinner_index = (self._spinner_index + 1) % len(self.SPINNER_FRAMES)
 
         # Build header
         expand_icon = "▼" if self.expanded else "▶"
@@ -634,6 +683,7 @@ class StatusBar(Static):
         self.average_cpu = 0.0
         self.last_update = ""
         self._status_text = "Initializing..."
+        logger.info("StatusBar initialized")
 
     def update_stats(
         self,
@@ -661,6 +711,7 @@ class StatusBar(Static):
         else:
             self.last_update = "--:--:--"
 
+        logger.info(f"StatusBar updated: total={total}, connected={connected}, disconnected={total-connected}, avg_cpu={average_cpu:.1f}%, updated={self.last_update}")
         self.refresh_display()
 
     def refresh_display(self):
@@ -829,6 +880,7 @@ class MonitoringApp(App):
         self._on_delete_server = on_delete_server
         self._on_add_server = on_add_server
         self._last_metrics_update: Optional[float] = None
+        logger.info(f"MonitoringApp initialized with {len(server_widgets)} server widgets")
 
     def compose(self) -> ComposeResult:
         """Compose the app layout."""
@@ -845,24 +897,31 @@ class MonitoringApp(App):
 
     def on_mount(self):
         """Handle app mount event."""
+        logger.info("MonitoringApp mounted, initializing UI state")
         self._update_selection()
         self._update_status_bar()
 
     def action_navigate_up(self):
         """Navigate to previous server."""
         if self.selected_index > 0:
+            old_index = self.selected_index
             self.selected_index -= 1
+            logger.info(f"Navigation: moved up from index {old_index} to {self.selected_index}")
             self._update_selection()
 
     def action_navigate_down(self):
         """Navigate to next server."""
         if self.selected_index < len(self.server_widgets) - 1:
+            old_index = self.selected_index
             self.selected_index += 1
+            logger.info(f"Navigation: moved down from index {old_index} to {self.selected_index}")
             self._update_selection()
 
     def action_toggle_expand(self):
         """Toggle expanded/collapsed state of selected server."""
         if 0 <= self.selected_index < len(self.server_widgets):
+            server_name = self.server_widgets[self.selected_index].server_name
+            logger.info(f"User action: toggle_expand for server '{server_name}'")
             self.server_widgets[self.selected_index].toggle_expanded()
 
     def action_expand(self):
@@ -870,6 +929,7 @@ class MonitoringApp(App):
         if 0 <= self.selected_index < len(self.server_widgets):
             widget = self.server_widgets[self.selected_index]
             if not widget.expanded:
+                logger.info(f"User action: expand server '{widget.server_name}'")
                 widget.toggle_expanded()
 
     def action_collapse(self):
@@ -877,10 +937,12 @@ class MonitoringApp(App):
         if 0 <= self.selected_index < len(self.server_widgets):
             widget = self.server_widgets[self.selected_index]
             if widget.expanded:
+                logger.info(f"User action: collapse server '{widget.server_name}'")
                 widget.toggle_expanded()
 
     def action_refresh(self):
         """Force refresh of all displays."""
+        logger.info(f"User action: manual refresh requested for {len(self.server_widgets)} servers")
         for widget in self.server_widgets:
             widget.refresh_display()
         self._update_status_bar()
@@ -888,11 +950,13 @@ class MonitoringApp(App):
     def action_delete_server(self):
         """Delete the selected server."""
         if not self.server_widgets:
+            logger.warning("User attempted to delete server but no servers exist")
             self.notify("No servers to delete", severity="warning")
             return
 
         if 0 <= self.selected_index < len(self.server_widgets):
             server_name = self.server_widgets[self.selected_index].server_name
+            logger.info(f"User action: delete_server initiated for '{server_name}'")
             self.push_screen(ConfirmDeleteScreen(server_name), self._handle_delete_confirm)
 
     def _handle_delete_confirm(self, confirmed: bool) -> None:
@@ -901,33 +965,45 @@ class MonitoringApp(App):
             widget = self.server_widgets[self.selected_index]
             server_name = widget.server_name
 
+            logger.info(f"Deleting server '{server_name}' from UI (index {self.selected_index})")
+
             # Remove widget from list and UI
             self.server_widgets.pop(self.selected_index)
             widget.remove()
 
             # Adjust selection
+            old_index = self.selected_index
             if self.selected_index >= len(self.server_widgets):
                 self.selected_index = max(0, len(self.server_widgets) - 1)
 
+            logger.info(f"Server deleted, adjusted selection from index {old_index} to {self.selected_index}")
             self._update_selection()
 
             # Callback to main app to persist changes
             if self._on_delete_server:
+                logger.info(f"Invoking delete callback for server '{server_name}'")
                 self._on_delete_server(server_name)
 
             self.notify(f"Server '{server_name}' deleted", severity="information")
+        elif not confirmed:
+            logger.info("Server deletion was not confirmed by user")
 
     def action_add_server(self):
         """Add a new server."""
+        logger.info("User action: add_server initiated, opening AddServerScreen")
         self.push_screen(AddServerScreen(), self._handle_add_server)
 
     def _handle_add_server(self, server_config: Optional[dict]) -> None:
         """Handle add server result."""
         if server_config:
+            logger.info(f"Add server confirmed: {server_config['name']} ({server_config['host']})")
             # Callback to main app to create components and persist
             if self._on_add_server:
+                logger.info(f"Invoking add callback for server '{server_config['name']}'")
                 self._on_add_server(server_config)
             self.notify(f"Server '{server_config['name']}' added", severity="information")
+        else:
+            logger.info("Add server cancelled by user")
 
     def add_server_widget(self, widget: ServerWidget) -> None:
         """Add a new server widget to the UI.
@@ -935,15 +1011,20 @@ class MonitoringApp(App):
         Args:
             widget: The server widget to add
         """
+        logger.info(f"Adding server widget to UI: {widget.server_name}")
         self.server_widgets.append(widget)
         if self.main_container:
             self.main_container.mount(widget)
         self.selected_index = len(self.server_widgets) - 1
+        logger.info(f"Server widget added, total servers: {len(self.server_widgets)}, selected_index: {self.selected_index}")
         self._update_selection()
         self._update_status_bar()
 
     def _update_selection(self):
         """Update the selection state of all server widgets."""
+        if 0 <= self.selected_index < len(self.server_widgets):
+            selected_name = self.server_widgets[self.selected_index].server_name
+            logger.info(f"Selection updated: index={self.selected_index}, server='{selected_name}'")
         for i, widget in enumerate(self.server_widgets):
             widget.set_selected(i == self.selected_index)
 
@@ -975,4 +1056,5 @@ class MonitoringApp(App):
     def update_metrics_timestamp(self):
         """Update the timestamp of last metrics update."""
         self._last_metrics_update = time.time()
+        logger.info(f"Metrics timestamp updated: {time.strftime('%H:%M:%S', time.localtime(self._last_metrics_update))}")
         self._update_status_bar()
