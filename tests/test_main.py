@@ -23,12 +23,14 @@ def temp_config_file():
                 "name": "test-server1",
                 "host": "192.168.1.100",
                 "username": "testuser",
+                "auth_method": "key",
                 "key_path": "/tmp/test_key.pem",
             },
             {
                 "name": "test-server2",
                 "host": "192.168.1.101",
                 "username": "testuser",
+                "auth_method": "key",
                 "key_path": "/tmp/test_key.pem",
             },
         ],
@@ -171,6 +173,7 @@ def test_initialize_components_with_defaults(temp_config_file):
                 "name": "test-server",
                 "host": "192.168.1.100",
                 "username": "testuser",
+                "auth_method": "key",
                 "key_path": "/tmp/test_key.pem",
             }
         ]
@@ -219,23 +222,18 @@ async def test_start_monitoring(app):
     app.load_config()
     app.initialize_components()
 
-    # Mock SSH client methods
-    for client in app.ssh_clients:
-        client.connect = AsyncMock(return_value=True)
-
     # Mock monitor methods
     for monitor in app.monitors:
         monitor.start = AsyncMock()
 
     await app.start_monitoring()
 
-    # Verify all clients attempted to connect
-    for client in app.ssh_clients:
-        client.connect.assert_called_once()
-
     # Verify all monitors started
     for monitor in app.monitors:
         monitor.start.assert_called_once()
+
+    # Note: Connection logic now happens inside monitor.start(),
+    # so we no longer directly verify client.connect() calls here
 
 
 @pytest.mark.asyncio
@@ -295,6 +293,7 @@ def test_save_config(app):
         "name": "new-server",
         "host": "192.168.1.102",
         "username": "testuser",
+        "auth_method": "key",
         "key_path": "/tmp/test_key.pem",
     })
 
@@ -386,6 +385,7 @@ def test_add_server(app):
         "name": "new-server",
         "host": "192.168.1.102",
         "username": "testuser",
+        "auth_method": "key",
         "key_path": "/tmp/test_key.pem",
     }
 

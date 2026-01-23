@@ -2,23 +2,34 @@
 # Copy this to config.yaml and customize for your environment
 
 servers:
-  # Server 1 - Example production server
+  # Server 1 - Example production server with SSH key authentication
   - name: "Production Web Server"
     host: "192.168.1.100"
     username: "ubuntu"
+    auth_method: key
     key_path: "~/.ssh/production-key.pem"
 
-  # Server 2 - Example database server
+  # Server 2 - Example database server with SSH key
   - name: "Database Server"
     host: "192.168.1.101"
     username: "ubuntu"
+    auth_method: key
     key_path: "~/.ssh/production-key.pem"
 
   # Server 3 - Example with different key
   - name: "Development Server"
     host: "dev.example.com"
     username: "developer"
+    auth_method: key
     key_path: "~/.ssh/dev-key.pem"
+
+  # Server 4 - Example with password authentication
+  # Password will be prompted at startup for security
+  # Passwords are NEVER saved to this config file - only stored in memory during runtime
+  - name: "DGX Spark"
+    host: "dgx-spark-1.kvantify.com"
+    username: "sebastian_yde"
+    auth_method: password  # Will prompt for password at startup
 
 # Monitoring Configuration
 monitoring:

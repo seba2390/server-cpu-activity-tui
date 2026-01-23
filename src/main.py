@@ -1,6 +1,7 @@
 """Main application entry point for CPU monitoring TUI."""
 
 import asyncio
+import getpass
 import logging
 import sys
 from pathlib import Path
@@ -103,12 +104,29 @@ class CPUMonitoringApp:
         # Create components for each server
         for server_config in self.config["servers"]:
             try:
+                # Get auth_method, defaulting to "key" for backward compatibility
+                auth_method = server_config.get("auth_method", "key")
+
+                # Prompt for password if auth_method is "password"
+                password = None
+                if auth_method == "password":
+                    server_name = server_config["name"]
+                    print(f"\n🔐 Password required for '{server_name}' ({server_config['host']})")
+                    password = getpass.getpass(f"Enter password for {server_config['username']}@{server_config['host']}: ")
+                    if not password:
+                        logger.error(f"No password provided for {server_name}")
+                        print(f"❌ Error: Password is required for {server_name}")
+                        sys.exit(1)
+                    logger.info(f"Password received for server: {server_name}")
+
                 # Create server configuration
                 srv_config = ServerConfig(
                     name=server_config["name"],
                     host=server_config["host"],
                     username=server_config["username"],
-                    key_path=server_config["key_path"],
+                    auth_method=auth_method,
+                    key_path=server_config.get("key_path"),
+                    password=password,
                 )
 
                 logger.info(f"Creating components for server: {srv_config.name} ({srv_config.host})")
@@ -256,12 +274,16 @@ class CPUMonitoringApp:
         """Add a new server to the configuration and start monitoring.
 
         Args:
-            server_config: Dictionary with name, host, username, key_path
+            server_config: Dictionary with name, host, username, auth_method, key_path (for key auth)
+                          or _password (temporary, for password auth - not saved to config)
         """
         server_name = server_config.get("name", "unnamed")
         logger.info(f"Adding new server: {server_name} ({server_config.get('host', 'no-host')})")
 
-        # Add to config
+        # Extract password if provided (won't be saved to config)
+        password = server_config.pop("_password", None)
+
+        # Add to config (without password)
         self.config["servers"].append(server_config)
         logger.info(f"  Server added to config, total servers: {len(self.config['servers'])}")
 
@@ -286,7 +308,9 @@ class CPUMonitoringApp:
             name=server_config["name"],
             host=server_config["host"],
             username=server_config["username"],
-            key_path=server_config["key_path"],
+            auth_method=server_config.get("auth_method", "key"),
+            key_path=server_config.get("key_path"),
+            password=password,  # Use in-memory password
         )
 
         ssh_client = SSHClient(
@@ -321,7 +345,7 @@ class CPUMonitoringApp:
         logger.info(f"  Starting monitoring for {server_name}...")
         asyncio.create_task(self._start_server_monitoring(ssh_client, monitor))
 
-        # Save config
+        # Save config (without password)
         self.save_config()
         logger.info(f"Server addition complete: {server_name}")
 

@@ -18,7 +18,19 @@ class ServerConfig:
     name: str
     host: str
     username: str
-    key_path: str
+    auth_method: str = "key"  # "key" or "password"
+    key_path: Optional[str] = None
+    password: Optional[str] = None
+
+    def __post_init__(self):
+        """Validate authentication configuration."""
+        if self.auth_method not in ["key", "password"]:
+            raise ValueError("auth_method must be 'key' or 'password'")
+
+        if self.auth_method == "key" and not self.key_path:
+            raise ValueError("key_path is required when auth_method is 'key'")
+
+        # Password will be set later if auth_method is "password"
 
 
 @dataclass
@@ -71,16 +83,36 @@ class SSHClient:
                 logger.info(f"{self.config.name}: Already connected, skipping connection attempt")
                 return True
 
-            key_path = Path(self.config.key_path).expanduser()
-            logger.info(f"{self.config.name}: Preparing to connect - host={self.config.host}, user={self.config.username}, key={key_path}")
+            # Determine authentication method
+            auth_display = self.config.auth_method
+            logger.info(f"{self.config.name}: Preparing to connect - host={self.config.host}, user={self.config.username}, auth={auth_display}")
 
-            if not key_path.exists():
-                error_msg = f"SSH key not found: {key_path}"
-                logger.error(f"{self.config.name}: {error_msg}")
-                self.status = ConnectionStatus(connected=False, error_message=error_msg)
-                return False
+            # Prepare connection kwargs based on authentication method
+            connect_kwargs = {
+                "host": self.config.host,
+                "username": self.config.username,
+                "known_hosts": None,  # Disable host key checking for simplicity
+            }
 
-            logger.info(f"{self.config.name}: SSH key verified at: {key_path}")
+            if self.config.auth_method == "password":
+                # Password-based authentication
+                if not self.config.password:
+                    error_msg = "Password not provided for password authentication"
+                    logger.error(f"{self.config.name}: {error_msg}")
+                    self.status = ConnectionStatus(connected=False, error_message=error_msg)
+                    return False
+                connect_kwargs["password"] = self.config.password
+                logger.info(f"{self.config.name}: Using password authentication")
+            else:
+                # Key-based authentication
+                key_path = Path(self.config.key_path).expanduser()
+                if not key_path.exists():
+                    error_msg = f"SSH key not found: {key_path}"
+                    logger.error(f"{self.config.name}: {error_msg}")
+                    self.status = ConnectionStatus(connected=False, error_message=error_msg)
+                    return False
+                connect_kwargs["client_keys"] = [str(key_path)]
+                logger.info(f"{self.config.name}: SSH key verified at: {key_path}")
 
             for attempt in range(self.max_retries):
                 try:
@@ -89,12 +121,7 @@ class SSHClient:
                     )
 
                     self._connection = await asyncio.wait_for(
-                        asyncssh.connect(
-                            self.config.host,
-                            username=self.config.username,
-                            client_keys=[str(key_path)],
-                            known_hosts=None,  # Disable host key checking for simplicity
-                        ),
+                        asyncssh.connect(**connect_kwargs),
                         timeout=self.connection_timeout,
                     )
 

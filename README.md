@@ -4,13 +4,15 @@ A Python-based Terminal User Interface (TUI) for real-time monitoring of CPU cor
 
 ## Features
 
-- Real-time CPU monitoring with per-core statistics
-- SSH-based remote access using key authentication
-- Interactive keyboard navigation
-- Collapsible server views
+- Real-time CPU and memory monitoring with per-core statistics
+- SSH-based remote access with key or password authentication
+- **Secure password handling**: Prompted at startup, stored in memory only
+- Interactive keyboard navigation with two-level input system
+- Collapsible server views with CPU history graphs
 - Color-coded usage levels (green/yellow/red)
+- Dynamic server management (add/delete servers while running)
 - Automatic reconnection on network failures
-- YAML configuration
+- YAML configuration (passwords never saved to config)
 - Async architecture for responsive UI
 
 ## Installation
@@ -19,7 +21,7 @@ A Python-based Terminal User Interface (TUI) for real-time monitoring of CPU cor
 
 - Python 3.9 or higher
 - SSH access to target Linux servers
-- SSH key files (.pem) for authentication
+- SSH key files (.pem) for key authentication OR passwords for password authentication
 
 ### Setup
 
@@ -33,10 +35,20 @@ Create/Edit `config.yaml`:
 
 ```yaml
 servers:
+  # SSH Key authentication (recommended)
   - name: "Server 1"
     host: "192.168.1.100"
     username: "ubuntu"
+    auth_method: key
     key_path: "~/.ssh/my-key.pem"
+
+  # Password authentication (password prompted at startup)
+  - name: "Server 2"
+    host: "192.168.1.101"
+    username: "ubuntu"
+    auth_method: password
+    # Note: Password will be prompted securely at startup
+    # and stored in memory only (never saved to config file)
 
 monitoring:
   poll_interval: 2.0              # CPU polling interval (seconds)
@@ -51,6 +63,10 @@ display:
   start_collapsed: false          # Initial state
 ```
 
+**Authentication Methods:**
+- `auth_method: key` - Uses SSH key file (specify `key_path`)
+- `auth_method: password` - Password prompted at startup (secure, not saved to config)
+
 ## Usage
 
 ### Start Application
@@ -59,13 +75,26 @@ display:
 make run
 ```
 
+If you have servers with password authentication, you'll be prompted to enter passwords securely at startup:
+
+```
+🔐 Password required for '<name>' (<hostname>)
+Enter password for <name>@<hostname>: [hidden input]
+```
+
 ### Keyboard Controls
 
+**Navigation:**
 - `↑/↓` - Navigate between servers
 - `←/→` - Collapse/expand server views
 - `Enter` - Toggle expand/collapse
+
+**Actions:**
 - `R` - Refresh display
-- `Q` - Quit
+- `A` - Add new server (opens dialog)
+- `D` - Delete selected server (with confirmation)
+- `P` - Open command palette
+- `Q` - Quit application
 
 ### Display Format
 
@@ -112,10 +141,14 @@ logging.basicConfig(level=logging.INFO)  # or logging.DEBUG
 
 **Connection timeout** - Check network/firewall, increase `connection_timeout`
 
-**Permission denied** - Set correct permissions:
+**Permission denied (key auth)** - Set correct permissions:
 ```bash
 chmod 600 ~/.ssh/your-key.pem
 ```
+
+**Permission denied (password auth)** - Verify username and password are correct
+
+**Password not prompted** - Ensure `auth_method: password` is set in config.yaml
 
 ### Display Issues
 
@@ -125,16 +158,23 @@ chmod 600 ~/.ssh/your-key.pem
 
 ## Technical Details
 
-### CPU Metrics
-- Reads `/proc/stat` via SSH
-- Calculates usage from time deltas
-- Provides per-core and overall statistics
+### Metrics Collection
+- **CPU**: Reads `/proc/stat` via SSH, calculates usage from time deltas
+- **Memory**: Reads `/proc/meminfo` for real-time memory statistics
+- Provides per-core CPU statistics and overall system metrics
+- Maintains historical data for graphing
 
 ### Architecture
 - **SSH**: asyncssh for async I/O
 - **Monitoring**: Independent async tasks per server
 - **UI**: Textual framework with reactive updates
-- **Thread safety**: Async locks
+- **Thread safety**: Async locks for connection management
+
+### Security
+- Passwords **never** stored in config files
+- Password input via `getpass` (hidden from terminal)
+- Passwords kept in memory only during runtime
+- Config files safe to commit to version control
 
 ## Project Structure
 

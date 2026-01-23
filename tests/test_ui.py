@@ -875,10 +875,10 @@ def test_history_plot_widget_render_with_data():
 
     rendered = widget.render()
 
-    # Should show some visualization
-    assert "Avg:" in rendered
-    assert "Window:" in rendered
-    # Should have sparkline characters
+    # Should show the plot title and time axis
+    assert "AVG CPU UTILIZATION" in rendered
+    assert "now" in rendered
+    # Should have filled area plot characters
     assert any(char in rendered for char in ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"])
 
 

@@ -13,7 +13,11 @@ from src.ssh_client import SSHClient, ServerConfig, ConnectionStatus
 def server_config():
     """Create a test server configuration."""
     return ServerConfig(
-        name="test-server", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"
+        name="test-server",
+        host="192.168.1.100",
+        username="testuser",
+        auth_method="key",
+        key_path="/tmp/test_key.pem"
     )
 
 
