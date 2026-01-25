@@ -11,48 +11,46 @@ from src.monitor import CPUCore, ServerMetrics, MemoryInfo
 def test_cpu_core_widget_initialization():
     """Test CPU core widget initialization."""
     core = CPUCore(core_id=0, usage_percent=45.5)
-    widget = CPUCoreWidget(core, low_threshold=30, medium_threshold=70)
+    widget = CPUCoreWidget(core)
 
     assert widget.core == core
-    assert widget.low_threshold == 30
-    assert widget.medium_threshold == 70
     assert widget.usage_percent == 45.5
 
 
 def test_cpu_core_widget_render_low_usage():
     """Test rendering with low CPU usage."""
     core = CPUCore(core_id=0, usage_percent=25.0)
-    widget = CPUCoreWidget(core, low_threshold=30, medium_threshold=70)
+    widget = CPUCoreWidget(core)
 
     rendered = widget.render()
 
     assert "Core  0:" in rendered
     assert "25.0%" in rendered
-    assert "[green]" in rendered  # Should be green for low usage
+    assert "[dodger_blue2]" in rendered  # Should be blue
 
 
 def test_cpu_core_widget_render_medium_usage():
     """Test rendering with medium CPU usage."""
     core = CPUCore(core_id=1, usage_percent=50.0)
-    widget = CPUCoreWidget(core, low_threshold=30, medium_threshold=70)
+    widget = CPUCoreWidget(core)
 
     rendered = widget.render()
 
     assert "Core  1:" in rendered
     assert "50.0%" in rendered
-    assert "[yellow]" in rendered  # Should be yellow for medium usage
+    assert "[dodger_blue2]" in rendered  # Should be blue
 
 
 def test_cpu_core_widget_render_high_usage():
     """Test rendering with high CPU usage."""
     core = CPUCore(core_id=2, usage_percent=85.0)
-    widget = CPUCoreWidget(core, low_threshold=30, medium_threshold=70)
+    widget = CPUCoreWidget(core)
 
     rendered = widget.render()
 
     assert "Core  2:" in rendered
     assert "85.0%" in rendered
-    assert "[red]" in rendered  # Should be red for high usage
+    assert "[dodger_blue2]" in rendered  # Should be blue
 
 
 def test_cpu_core_widget_update():
@@ -71,27 +69,25 @@ def test_cpu_core_widget_update():
 def test_server_widget_initialization():
     """Test server widget initialization."""
     widget = ServerWidget(
-        server_name="test-server", low_threshold=30, medium_threshold=70, start_collapsed=True
+        server_name="test-server"
     )
 
     assert widget.server_name == "test-server"
-    assert widget.low_threshold == 30
-    assert widget.medium_threshold == 70
-    assert not widget.expanded  # start_collapsed=True means not expanded
+    assert not widget.expanded  # Always starts collapsed
     assert not widget.is_selected
 
 
 def test_server_widget_toggle_expanded():
     """Test toggling server widget expansion."""
-    widget = ServerWidget(server_name="test-server", start_collapsed=False)
+    widget = ServerWidget(server_name="test-server")
 
+    assert not widget.expanded  # Starts collapsed
+
+    widget.toggle_expanded()
     assert widget.expanded
 
     widget.toggle_expanded()
     assert not widget.expanded
-
-    widget.toggle_expanded()
-    assert widget.expanded
 
 
 def test_server_widget_set_selected():
@@ -409,7 +405,7 @@ def test_monitoring_app_action_toggle_expand():
     """Test MonitoringApp toggle expand action."""
     from src.ui import MonitoringApp, ServerWidget
 
-    widgets = [ServerWidget(server_name="server1", start_collapsed=True)]
+    widgets = [ServerWidget(server_name="server1")]
 
     app = MonitoringApp(server_widgets=widgets)
     app.selected_index = 0
@@ -425,7 +421,7 @@ def test_monitoring_app_action_expand():
     """Test MonitoringApp expand action."""
     from src.ui import MonitoringApp, ServerWidget
 
-    widgets = [ServerWidget(server_name="server1", start_collapsed=True)]
+    widgets = [ServerWidget(server_name="server1")]
 
     app = MonitoringApp(server_widgets=widgets)
     app.selected_index = 0
@@ -441,11 +437,13 @@ def test_monitoring_app_action_expand_already_expanded():
     """Test MonitoringApp expand when already expanded."""
     from src.ui import MonitoringApp, ServerWidget
 
-    widgets = [ServerWidget(server_name="server1", start_collapsed=False)]
+    widgets = [ServerWidget(server_name="server1")]
 
     app = MonitoringApp(server_widgets=widgets)
     app.selected_index = 0
 
+    # First expand it
+    widgets[0].toggle_expanded()
     assert widgets[0].expanded
 
     app.action_expand()
@@ -458,11 +456,13 @@ def test_monitoring_app_action_collapse():
     """Test MonitoringApp collapse action."""
     from src.ui import MonitoringApp, ServerWidget
 
-    widgets = [ServerWidget(server_name="server1", start_collapsed=False)]
+    widgets = [ServerWidget(server_name="server1")]
 
     app = MonitoringApp(server_widgets=widgets)
     app.selected_index = 0
 
+    # First expand it
+    widgets[0].toggle_expanded()
     assert widgets[0].expanded
 
     app.action_collapse()
@@ -474,7 +474,7 @@ def test_monitoring_app_action_collapse_already_collapsed():
     """Test MonitoringApp collapse when already collapsed."""
     from src.ui import MonitoringApp, ServerWidget
 
-    widgets = [ServerWidget(server_name="server1", start_collapsed=True)]
+    widgets = [ServerWidget(server_name="server1")]
 
     app = MonitoringApp(server_widgets=widgets)
     app.selected_index = 0
@@ -592,18 +592,17 @@ def test_cpu_core_widget_bar_width_calculation():
 
 
 def test_cpu_core_widget_threshold_boundaries():
-    """Test CPU core widget color at threshold boundaries."""
-    # Test exactly at low threshold
-    core = CPUCore(core_id=0, usage_percent=30.0)
-    widget = CPUCoreWidget(core, low_threshold=30, medium_threshold=70)
-    rendered = widget.render()
-    assert "[yellow]" in rendered
+    """Test CPU core widget always uses blue color."""
+    # Test with different usage levels - all should be blue
+    core1 = CPUCore(core_id=0, usage_percent=30.0)
+    widget1 = CPUCoreWidget(core1)
+    rendered1 = widget1.render()
+    assert "[dodger_blue2]" in rendered1
 
-    # Test exactly at medium threshold
-    core = CPUCore(core_id=0, usage_percent=70.0)
-    widget = CPUCoreWidget(core, low_threshold=30, medium_threshold=70)
-    rendered = widget.render()
-    assert "[red]" in rendered
+    core2 = CPUCore(core_id=0, usage_percent=70.0)
+    widget2 = CPUCoreWidget(core2)
+    rendered2 = widget2.render()
+    assert "[dodger_blue2]" in rendered2
 
 
 def test_server_widget_display_without_metrics():
@@ -619,7 +618,7 @@ def test_server_widget_display_without_metrics():
 
 def test_server_widget_collapsed_cores_not_displayed():
     """Test that cores are hidden when widget is collapsed."""
-    widget = ServerWidget(server_name="test-server", start_collapsed=True)
+    widget = ServerWidget(server_name="test-server")
     widget.cores_container = Static()
 
     assert not widget.expanded
@@ -633,9 +632,11 @@ def test_server_widget_collapsed_cores_not_displayed():
 
 def test_server_widget_expanded_cores_displayed():
     """Test that cores are shown when widget is expanded."""
-    widget = ServerWidget(server_name="test-server", start_collapsed=False)
+    widget = ServerWidget(server_name="test-server")
     widget.cores_container = Static()
 
+    # Expand it first
+    widget.toggle_expanded()
     assert widget.expanded
 
     widget.refresh_display()
@@ -761,10 +762,8 @@ def test_monitoring_app_add_server_widget_without_container():
 
 def test_memory_widget_initialization():
     """Test memory widget initialization."""
-    widget = MemoryWidget(low_threshold=30, medium_threshold=70)
+    widget = MemoryWidget()
 
-    assert widget.low_threshold == 30
-    assert widget.medium_threshold == 70
     assert widget.memory_info is None
 
 
@@ -789,14 +788,14 @@ def test_memory_widget_render_low_usage():
         buffers_mb=500.0,
     )
 
-    widget = MemoryWidget(low_threshold=30, medium_threshold=70)
+    widget = MemoryWidget()
     widget.update_memory(memory_info)
 
     rendered = widget.render()
 
     assert "Memory:" in rendered
     assert "25.0%" in rendered
-    assert "[green]" in rendered  # Should be green for low usage
+    assert "[dodger_blue2]" in rendered  # Should be blue
 
 
 def test_memory_widget_render_medium_usage():
@@ -811,13 +810,13 @@ def test_memory_widget_render_medium_usage():
         buffers_mb=500.0,
     )
 
-    widget = MemoryWidget(low_threshold=30, medium_threshold=70)
+    widget = MemoryWidget()
     widget.update_memory(memory_info)
 
     rendered = widget.render()
 
     assert "50.0%" in rendered
-    assert "[yellow]" in rendered  # Should be yellow for medium usage
+    assert "[dodger_blue2]" in rendered  # Should be blue
 
 
 def test_memory_widget_render_high_usage():
@@ -832,13 +831,13 @@ def test_memory_widget_render_high_usage():
         buffers_mb=500.0,
     )
 
-    widget = MemoryWidget(low_threshold=30, medium_threshold=70)
+    widget = MemoryWidget()
     widget.update_memory(memory_info)
 
     rendered = widget.render()
 
     assert "87.5%" in rendered
-    assert "[red]" in rendered  # Should be red for high usage
+    assert "[dodger_blue2]" in rendered  # Should be blue
 
 
 def test_history_plot_widget_initialization():
@@ -878,8 +877,8 @@ def test_history_plot_widget_render_with_data():
     # Should show the plot title and window width label
     assert "AVG CPU UTILIZATION" in rendered
     assert "window width:" in rendered
-    # Should have braille plot characters (check for cyan color which is used in braille plots)
-    assert "[cyan]" in rendered
+    # Should have braille plot characters (check for blue color which is used in braille plots)
+    assert "[dodger_blue2]" in rendered
 
 
 def test_history_plot_widget_update():
@@ -902,15 +901,12 @@ def test_server_widget_with_history_window():
     """Test server widget initialization with history_window."""
     widget = ServerWidget(
         server_name="test-server",
-        low_threshold=30,
-        medium_threshold=70,
-        start_collapsed=False,
         history_window=120,
     )
 
     assert widget.server_name == "test-server"
     assert widget.history_window == 120
-    assert widget.expanded
+    assert not widget.expanded  # Always starts collapsed
 
 
 def test_server_widget_update_history():
@@ -939,9 +935,9 @@ def test_history_plot_widget_braille_line_plot():
     assert len(plot_rows) == 4
     assert all(isinstance(row, str) for row in plot_rows)
 
-    # Check for cyan color (used in braille plot)
+    # Check for blue color (used in braille plot)
     combined = "".join(plot_rows)
-    assert "[cyan]" in combined
+    assert "[dodger_blue2]" in combined
 
 
 def test_history_plot_widget_render_braille():

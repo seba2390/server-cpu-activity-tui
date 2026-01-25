@@ -309,17 +309,88 @@ class TestAddServerScreenTwoLevelNavigation:
         assert bindings["up"] == "navigate_up"
         assert bindings["down"] == "navigate_down"
         assert bindings["enter"] == "enter_field"
-        assert bindings["right"] == "enter_field"
-        assert bindings["left"] == "exit_field"
+        assert bindings["right"] == "navigate_right"
+        assert bindings["left"] == "navigate_left"
         assert bindings["escape"] == "cancel"
         assert bindings["ctrl+s"] == "submit"
+
+    def test_action_navigate_right_transitions_add_to_cancel(self):
+        """Test that right arrow on Add Server button moves to Cancel button."""
+        screen = AddServerScreen()
+        screen.fields = [
+            {"id": "add-btn", "label_id": None, "type": "button"},
+            {"id": "cancel-btn", "label_id": None, "type": "button"},
+        ]
+        screen.current_field_index = 0  # On add-btn
+
+        # Mock highlight update methods
+        screen._update_field_highlights = Mock()
+        screen.in_edit_mode = False
+
+        screen.action_navigate_right()
+
+        assert screen.current_field_index == 1  # Should move to cancel-btn
+
+    def test_action_navigate_left_transitions_cancel_to_add(self):
+        """Test that left arrow on Cancel button moves to Add Server button."""
+        screen = AddServerScreen()
+        screen.fields = [
+            {"id": "add-btn", "label_id": None, "type": "button"},
+            {"id": "cancel-btn", "label_id": None, "type": "button"},
+        ]
+        screen.current_field_index = 1  # On cancel-btn
+
+        # Mock highlight update methods
+        screen._update_field_highlights = Mock()
+        screen.in_edit_mode = False
+
+        screen.action_navigate_left()
+
+        assert screen.current_field_index == 0  # Should move to add-btn
+
+    def test_action_navigate_down_skips_cancel_from_add(self):
+        """Test that down arrow from Add Server button skips Cancel button."""
+        screen = AddServerScreen()
+        screen.fields = [
+            {"id": "input-name", "label_id": "label-name", "type": "input"},
+            {"id": "add-btn", "label_id": None, "type": "button"},
+            {"id": "cancel-btn", "label_id": None, "type": "button"},
+        ]
+        screen.current_field_index = 1  # On add-btn
+
+        # Mock highlight update methods
+        screen._update_field_highlights = Mock()
+        screen.in_edit_mode = False
+
+        screen.action_navigate_down()
+
+        assert screen.current_field_index == 0  # Should wrap to input-name
+
+    def test_action_navigate_up_skips_add_from_cancel(self):
+        """Test that up arrow from Cancel button skips Add Server button."""
+        screen = AddServerScreen()
+        screen.fields = [
+            {"id": "input-name", "label_id": "label-name", "type": "input"},
+            {"id": "add-btn", "label_id": None, "type": "button"},
+            {"id": "cancel-btn", "label_id": None, "type": "button"},
+        ]
+        screen.current_field_index = 2  # On cancel-btn
+
+        # Mock highlight update methods
+        screen._update_field_highlights = Mock()
+        screen.in_edit_mode = False
+
+        screen.action_navigate_up()
+
+        assert screen.current_field_index == 0  # Should go to input-name
 
     def test_action_methods_exist(self):
         """Test that all required action methods exist."""
         screen = AddServerScreen()
 
         assert hasattr(screen, 'action_navigate_up')
-        assert hasattr(screen, 'action_navigate_down')
+        assert hasattr(screen, 'action_navigate_right')
+        assert hasattr(screen, 'action_navigate_left')
         assert hasattr(screen, 'action_enter_field')
         assert hasattr(screen, 'action_exit_field')
         assert hasattr(screen, 'action_cancel')
@@ -327,6 +398,8 @@ class TestAddServerScreenTwoLevelNavigation:
 
         assert callable(screen.action_navigate_up)
         assert callable(screen.action_navigate_down)
+        assert callable(screen.action_navigate_right)
+        assert callable(screen.action_navigate_left)
         assert callable(screen.action_enter_field)
         assert callable(screen.action_exit_field)
         assert callable(screen.action_cancel)

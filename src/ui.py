@@ -110,6 +110,11 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         background: $boost;
     }
 
+    #fields-scroll {
+        width: 100%;
+        height: 1fr;
+    }
+
     .field-container {
         height: auto;
         margin-bottom: 1;
@@ -151,12 +156,18 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         width: 100%;
         height: auto;
         align: center middle;
-        margin-top: 2;
+        margin-top: 1;
     }
 
     #add-buttons Button {
-        margin: 0 2;
-        min-width: 12;
+        margin: 0 1;
+        min-width: 10;
+        height: 3;
+    }
+
+    #add-buttons Button.highlighted-button {
+        border: thick $accent;
+        text-style: bold;
     }
 
     .hidden {
@@ -170,8 +181,8 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         Binding("up", "navigate_up", "Up", show=False),
         Binding("down", "navigate_down", "Down", show=False),
         Binding("enter", "enter_field", "Enter", show=False),
-        Binding("right", "enter_field", "Enter", show=False),
-        Binding("left", "exit_field", "Exit", show=False),
+        Binding("right", "navigate_right", "Right", show=False),
+        Binding("left", "navigate_left", "Left", show=False),
     ]
 
     def __init__(self, **kwargs):
@@ -186,52 +197,57 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         with Vertical(id="add-dialog"):
             yield Label("Add New Server", id="add-title")
 
-            # Server Name Field
-            with Vertical(classes="field-container", id="field-name"):
-                yield Label("Server Name:", classes="field-label", id="label-name")
-                yield Input(placeholder="e.g., Production Server 1", id="input-name", disabled=True)
-                yield Label("A friendly name to identify this server", classes="help-text")
+            with VerticalScroll(id="fields-scroll", can_focus=False):
+                # Server Name Field
+                with Vertical(classes="field-container", id="field-name"):
+                    yield Label("Server Name:", classes="field-label", id="label-name")
+                    yield Input(placeholder="e.g., Production Server 1", id="input-name", disabled=True)
+                    yield Label("A friendly name to identify this server", classes="help-text")
 
-            # Host Field
-            with Vertical(classes="field-container", id="field-host"):
-                yield Label("Host (IP or Hostname):", classes="field-label", id="label-host")
-                yield Input(placeholder="e.g., 192.168.1.100 or server.example.com", id="input-host", disabled=True)
-                yield Label("The IP address or hostname of the server", classes="help-text")
+                # Host Field
+                with Vertical(classes="field-container", id="field-host"):
+                    yield Label("Host (IP or Hostname):", classes="field-label", id="label-host")
+                    yield Input(placeholder="e.g., 192.168.1.100 or server.example.com", id="input-host", disabled=True)
+                    yield Label("The IP address or hostname of the server", classes="help-text")
 
-            # Username Field
-            with Vertical(classes="field-container", id="field-username"):
-                yield Label("Username:", classes="field-label", id="label-username")
-                yield Input(placeholder="e.g., ubuntu, admin, root", id="input-username", value="ubuntu", disabled=True)
-                yield Label("SSH username for authentication", classes="help-text")
+                # Username Field
+                with Vertical(classes="field-container", id="field-username"):
+                    yield Label("Username:", classes="field-label", id="label-username")
+                    yield Input(placeholder="e.g., ubuntu, admin, root", id="input-username", value="ubuntu", disabled=True)
+                    yield Label("SSH username for authentication", classes="help-text")
 
-            # Authentication Method Selection
-            with Vertical(classes="field-container", id="field-authmethod"):
-                yield Label("Authentication Method:", classes="field-label", id="label-authmethod")
-                auth_list = OptionList(
-                    Option("SSH Key (recommended)", id="key"),
-                    Option("Password", id="password"),
-                    id="auth-method-list",
-                    disabled=True
-                )
-                yield auth_list
-                yield Label("Use ↑↓ to navigate, → or Enter to select", classes="help-text")
+                # Authentication Method Selection
+                with Vertical(classes="field-container", id="field-authmethod"):
+                    yield Label("Authentication Method:", classes="field-label", id="label-authmethod")
+                    auth_list = OptionList(
+                        Option("SSH Key (recommended)", id="key"),
+                        Option("Password", id="password"),
+                        id="auth-method-list",
+                        disabled=True
+                    )
+                    yield auth_list
+                    yield Label("Use ↑↓ to navigate, → or Enter to select", classes="help-text")
 
-            # SSH Key Path Field (shown for key auth)
-            with Vertical(classes="field-container", id="key-container"):
-                yield Label("SSH Key Path:", classes="field-label", id="label-keypath")
-                yield Input(placeholder="e.g., ~/.ssh/id_rsa", id="input-keypath", value="~/.ssh/id_rsa", disabled=True)
-                yield Label("Path to your private SSH key file", classes="help-text")
+                # SSH Key Path Field (shown for key auth)
+                with Vertical(classes="field-container", id="key-container"):
+                    yield Label("SSH Key Path:", classes="field-label", id="label-keypath")
+                    yield Input(placeholder="e.g., ~/.ssh/id_rsa", id="input-keypath", value="~/.ssh/id_rsa", disabled=True)
+                    yield Label("Path to your private SSH key file", classes="help-text")
 
-            # Password Field (hidden by default, shown for password auth)
-            with Vertical(classes="field-container hidden", id="password-container"):
-                yield Label("Password:", classes="field-label", id="label-password")
-                yield Input(placeholder="Enter password", id="input-password", password=True, disabled=True)
-                yield Label("SSH password for authentication", classes="help-text")
+                # Password Field (hidden by default, shown for password auth)
+                with Vertical(classes="field-container hidden", id="password-container"):
+                    yield Label("Password:", classes="field-label", id="label-password")
+                    yield Input(placeholder="Enter password", id="input-password", password=True, disabled=True)
+                    yield Label("SSH password for authentication", classes="help-text")
 
             # Action Buttons
             with Horizontal(id="add-buttons"):
-                yield Button("Add Server (Ctrl+S)", variant="success", id="add-btn")
-                yield Button("Cancel (Esc)", variant="primary", id="cancel-btn")
+                b1 = Button("Add Server", id="add-btn")
+                b1.can_focus = False
+                yield b1
+                b2 = Button("Cancel", id="cancel-btn")
+                b2.can_focus = False
+                yield b2
 
     def on_mount(self) -> None:
         """Set up initial state when screen is mounted."""
@@ -246,6 +262,7 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
             {"id": "input-keypath", "label_id": "label-keypath", "type": "input", "auth_type": "key"},
             {"id": "input-password", "label_id": "label-password", "type": "input", "auth_type": "password"},
             {"id": "add-btn", "label_id": None, "type": "button"},
+            {"id": "cancel-btn", "label_id": None, "type": "button"},
         ]
 
         # Select the first auth method (SSH Key) by default
@@ -280,6 +297,13 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
             except:
                 pass  # Label might not exist yet
 
+        # Reset button highlights
+        for btn_id in ["add-btn", "cancel-btn"]:
+            try:
+                self.query_one(f"#{btn_id}", Button).remove_class("highlighted-button")
+            except:
+                pass
+
         # Get current field
         field = self._get_current_field()
         if not field:
@@ -292,7 +316,7 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
             return
 
         # Add arrow and highlight to current field label
-        if field["label_id"] and field["label_id"] in label_texts:
+        if field.get("label_id") and field["label_id"] in label_texts:
             label = self.query_one(f"#{field['label_id']}", Label)
             label.add_class("highlighted")
             original_text = label_texts[field["label_id"]]
@@ -302,6 +326,27 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
                 label.update(f"▶ {original_text}")
             else:
                 label.update(f"→ {original_text}")
+
+        # Highlight button if current field is a button
+        if field["type"] == "button":
+            try:
+                btn = self.query_one(f"#{field['id']}", Button)
+                btn.add_class("highlighted-button")
+            except Exception as e:
+                logger.warning(f"Failed to highlight button {field['id']}: {e}")
+
+        # Scroll to the highlighted field
+        try:
+            widget = self.query_one(f"#{field['id']}")
+            if field['type'] == 'button':
+                widget.scroll_visible(animate=False)
+            else:
+                # Get the field container (the Vertical holding the input)
+                field_container = widget.parent
+                if field_container:
+                    field_container.scroll_visible(animate=False)
+        except Exception as e:
+            logger.warning(f"Failed to scroll to field {field['id']}: {e}")
 
         logger.info(f"Highlighted field {field['id']}, edit_mode={self.in_edit_mode}")
 
@@ -356,7 +401,16 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         if self.in_edit_mode:
             return  # Arrow keys are for editing
 
+        current_field = self._get_current_field()
         self._navigate_to_prev_valid_field()
+
+        # If we were on cancel-btn and moved to add-btn, skip it (they are on same row)
+        # We want to go to the field above the buttons
+        new_field = self._get_current_field()
+        if (current_field and current_field.get("id") == "cancel-btn" and
+            new_field and new_field.get("id") == "add-btn"):
+            self._navigate_to_prev_valid_field()
+
         logger.info(f"Navigated up to field index {self.current_field_index}")
 
     def action_navigate_down(self) -> None:
@@ -364,11 +418,58 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         if self.in_edit_mode:
             return  # Arrow keys are for editing
 
+        current_field = self._get_current_field()
         self._navigate_to_next_valid_field()
+
+        # If we were on add-btn and moved to cancel-btn, skip it (they are on same row)
+        # We want to go to the field below the buttons (or wrap to top)
+        new_field = self._get_current_field()
+        if (current_field and current_field.get("id") == "add-btn" and
+            new_field and new_field.get("id") == "cancel-btn"):
+            self._navigate_to_next_valid_field()
+
         logger.info(f"Navigated down to field index {self.current_field_index}")
 
+    def action_navigate_right(self) -> None:
+        """Handle Right arrow key."""
+        field = self._get_current_field()
+        if not field:
+            return
+
+        # Special handling for buttons
+        if field.get("id") == "add-btn":
+            # Move to cancel button
+            # We know cancel button is next, so use navigate_next
+            self._navigate_to_next_valid_field()
+            return
+
+        # If it's a button (e.g. cancel), do nothing (don't activate)
+        if field["type"] == "button":
+            return
+
+        # Otherwise behave like Enter (enter field)
+        self.action_enter_field()
+
+    def action_navigate_left(self) -> None:
+        """Handle Left arrow key."""
+        # If in edit mode, exit edit mode
+        if self.in_edit_mode:
+            self.action_exit_field()
+            return
+
+        field = self._get_current_field()
+        if not field:
+            return
+
+        # Special handling for buttons
+        if field.get("id") == "cancel-btn":
+            # Move to add button
+            # We know add button is prev, so use navigate_prev
+            self._navigate_to_prev_valid_field()
+            return
+
     def action_enter_field(self) -> None:
-        """Enter edit mode for current field (Enter or Right arrow)."""
+        """Enter edit mode for current field (Enter key)."""
         if self.in_edit_mode:
             # If already in edit mode, Enter exits (for inputs) or confirms (for buttons)
             self.action_exit_field()
@@ -548,20 +649,14 @@ class CPUCoreWidget(Static):
 
     usage_percent = reactive(0.0)
 
-    def __init__(
-        self, core: CPUCore, low_threshold: float = 30.0, medium_threshold: float = 70.0, **kwargs
-    ):
+    def __init__(self, core: CPUCore, **kwargs):
         """Initialize CPU core widget.
 
         Args:
             core: CPU core data
-            low_threshold: Threshold for low usage (green)
-            medium_threshold: Threshold for medium usage (yellow)
         """
         super().__init__(**kwargs)
         self.core = core
-        self.low_threshold = low_threshold
-        self.medium_threshold = medium_threshold
         self.usage_percent = core.usage_percent
         logger.info(f"CPUCoreWidget initialized: core_id={core.core_id}, usage={core.usage_percent:.1f}%")
 
@@ -583,31 +678,19 @@ class CPUCoreWidget(Static):
         filled = int((usage / 100.0) * bar_width)
         bar = "█" * filled + "░" * (bar_width - filled)
 
-        # Color coding based on usage
-        if usage < self.low_threshold:
-            color = "green"
-        elif usage < self.medium_threshold:
-            color = "yellow"
-        else:
-            color = "red"
+        # Use consistent blue color
+        color = "dodger_blue2"
 
         return f"  Core {self.core.core_id:2d}: [{color}]{bar}[/{color}] {usage:5.1f}%"
 
 class MemoryWidget(Static):
     """Widget displaying memory usage."""
 
-    def __init__(self, low_threshold: float = 30.0, medium_threshold: float = 70.0, **kwargs):
-        """Initialize memory widget.
-
-        Args:
-            low_threshold: Threshold for low usage (green)
-            medium_threshold: Threshold for medium usage (yellow)
-        """
+    def __init__(self, **kwargs):
+        """Initialize memory widget."""
         super().__init__(**kwargs)
-        self.low_threshold = low_threshold
-        self.medium_threshold = medium_threshold
         self.memory_info: Optional[MemoryInfo] = None
-        logger.info(f"MemoryWidget initialized with thresholds: low={low_threshold}%, medium={medium_threshold}%")
+        logger.info("MemoryWidget initialized")
 
     def update_memory(self, memory_info: Optional[MemoryInfo]):
         """Update memory data.
@@ -633,13 +716,8 @@ class MemoryWidget(Static):
         filled = int((usage / 100.0) * bar_width)
         bar = "█" * filled + "░" * (bar_width - filled)
 
-        # Color coding based on usage
-        if usage < self.low_threshold:
-            color = "green"
-        elif usage < self.medium_threshold:
-            color = "yellow"
-        else:
-            color = "red"
+        # Use consistent blue color
+        color = "dodger_blue2"
 
         used_gb = mem.used_mb / 1024.0
         total_gb = mem.total_mb / 1024.0
@@ -661,22 +739,17 @@ class HistoryPlotWidget(Static):
     ]
 
     def __init__(self, history_window: int = 60, plot_style: str = "braille",
-                 low_threshold: float = 30.0, medium_threshold: float = 70.0,
                  poll_interval: float = 2.0, **kwargs):
         """Initialize history plot widget.
 
         Args:
             history_window: Time window in seconds
             plot_style: Visualization style (area, gradient, braille, sparkline, layered)
-            low_threshold: CPU usage threshold for low/medium boundary
-            medium_threshold: CPU usage threshold for medium/high boundary
             poll_interval: Polling interval in seconds
         """
         super().__init__(**kwargs)
         self.history_window = history_window
         self.plot_style = plot_style
-        self.low_threshold = low_threshold
-        self.medium_threshold = medium_threshold
         self.poll_interval = poll_interval
         self.history_data: list[tuple[float, float]] = []
 
@@ -754,7 +827,7 @@ class HistoryPlotWidget(Static):
             row_str = ""
             for dots in row:
                 char = chr(self.BRAILLE_BASE + dots)
-                row_str += f"[cyan]{char}[/cyan]"
+                row_str += f"[dodger_blue2]{char}[/dodger_blue2]"
             rows.append(row_str)
 
         return rows
@@ -827,9 +900,6 @@ class ServerWidget(Static):
     def __init__(
         self,
         server_name: str,
-        low_threshold: float = 30.0,
-        medium_threshold: float = 70.0,
-        start_collapsed: bool = False,
         history_window: int = 60,
         plot_style: str = "braille",
         poll_interval: float = 2.0,
@@ -839,18 +909,13 @@ class ServerWidget(Static):
 
         Args:
             server_name: Name of the server
-            low_threshold: Threshold for low usage
-            medium_threshold: Threshold for medium usage
-            start_collapsed: Whether to start in collapsed state
             history_window: Time window for history graph (seconds)
             plot_style: Visualization style for CPU history plot
             poll_interval: Polling interval in seconds
         """
         super().__init__(**kwargs)
         self.server_name = server_name
-        self.low_threshold = low_threshold
-        self.medium_threshold = medium_threshold
-        self.expanded = not start_collapsed
+        self.expanded = False  # Always start collapsed
         self.history_window = history_window
         self.plot_style = plot_style
         self.poll_interval = poll_interval
@@ -867,7 +932,6 @@ class ServerWidget(Static):
         self._spinner_index = 0
         self._connection_start_time: Optional[float] = None
         self._retry_count = 0
-        logger.info(f"ServerWidget initialized: name={server_name}, expanded={self.expanded}, thresholds=(low={low_threshold}%, med={medium_threshold}%), history_window={history_window}s")
 
     def compose(self) -> ComposeResult:
         """Compose the server widget layout."""
@@ -889,7 +953,7 @@ class ServerWidget(Static):
                     # Memory Section with header
                     with Container(id=f"memory-{safe_id}", classes="section-container") as self.memory_container:
                         yield Static("[bold dodger_blue2]━━━ MEMORY ━━━[/bold dodger_blue2]", classes="section-header")
-                        self.memory_widget = MemoryWidget(self.low_threshold, self.medium_threshold)
+                        self.memory_widget = MemoryWidget()
                         yield self.memory_widget
 
                     # History Section with header
@@ -898,8 +962,6 @@ class ServerWidget(Static):
                         self.history_widget = HistoryPlotWidget(
                             self.history_window,
                             self.plot_style,
-                            self.low_threshold,
-                            self.medium_threshold,
                             self.poll_interval
                         )
                         yield self.history_widget
@@ -950,7 +1012,7 @@ class ServerWidget(Static):
                 if i < len(self.core_widgets):
                     self.core_widgets[i].update_core(core)
                 else:
-                    core_widget = CPUCoreWidget(core, self.low_threshold, self.medium_threshold)
+                    core_widget = CPUCoreWidget(core)
                     self.core_widgets.append(core_widget)
                     cores_content.mount(core_widget)
                     added_count += 1
@@ -1018,14 +1080,9 @@ class ServerWidget(Static):
             else:
                 status = f"[red]✗ {error}[/red]"
         else:
-            # Color code overall usage
+            # Use consistent blue color
             usage = self.metrics.overall_usage
-            if usage < self.low_threshold:
-                color = "green"
-            elif usage < self.medium_threshold:
-                color = "yellow"
-            else:
-                color = "red"
+            color = "dodger_blue2"
 
             core_count = self.metrics.core_count
             status = f"[{color}]✓ {usage:5.1f}% avg ({core_count} cores)[/{color}]"

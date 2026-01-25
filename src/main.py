@@ -93,14 +93,10 @@ class CPUMonitoringApp:
         max_retries = monitoring_config.get("max_retries", 3)
         retry_delay = monitoring_config.get("retry_delay", 5)
 
-        low_threshold = display_config.get("low_threshold", 30)
-        medium_threshold = display_config.get("medium_threshold", 70)
-        start_collapsed = display_config.get("start_collapsed", False)
         plot_style = "braille"  # Hardcoded to braille
 
         logger.info(f"Configuration parameters: poll_interval={poll_interval}s, history_window={history_window}s, ")
         logger.info(f"  connection_timeout={connection_timeout}s, max_retries={max_retries}, retry_delay={retry_delay}s")
-        logger.info(f"  thresholds: low={low_threshold}%, medium={medium_threshold}%, start_collapsed={start_collapsed}, plot_style={plot_style}")
 
         # Create components for each server
         for server_config in self.config["servers"]:
@@ -150,9 +146,6 @@ class CPUMonitoringApp:
                 # Create UI widget
                 widget = ServerWidget(
                     server_name=srv_config.name,
-                    low_threshold=low_threshold,
-                    medium_threshold=medium_threshold,
-                    start_collapsed=start_collapsed,
                     history_window=history_window,
                     plot_style=plot_style,
                     poll_interval=poll_interval,
@@ -300,9 +293,6 @@ class CPUMonitoringApp:
         max_retries = monitoring_config.get("max_retries", 3)
         retry_delay = monitoring_config.get("retry_delay", 5)
 
-        low_threshold = display_config.get("low_threshold", 30)
-        medium_threshold = display_config.get("medium_threshold", 70)
-        start_collapsed = display_config.get("start_collapsed", False)
         plot_style = "braille"  # Hardcoded to braille
 
         logger.info(f"  Creating components for {server_name}...")
@@ -332,9 +322,6 @@ class CPUMonitoringApp:
 
         widget = ServerWidget(
             server_name=srv_config.name,
-            low_threshold=low_threshold,
-            medium_threshold=medium_threshold,
-            start_collapsed=start_collapsed,
             history_window=history_window,
             plot_style=plot_style,
             poll_interval=poll_interval,

@@ -57,10 +57,7 @@ monitoring:
   max_retries: 3                  # Connection retry attempts
   retry_delay: 5                  # Delay between retries (seconds)
 
-display:
-  low_threshold: 30               # Green threshold (%)
-  medium_threshold: 70            # Yellow threshold (%)
-  start_collapsed: false          # Initial state
+display: {}                       # Reserved for future display options
 ```
 
 **Authentication Methods:**

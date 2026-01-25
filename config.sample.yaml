@@ -55,14 +55,4 @@ monitoring:
   retry_delay: 5
 
 # Display Configuration
-display:
-  # CPU usage thresholds for color coding
-  low_threshold: 30        # Usage below this is GREEN
-  medium_threshold: 70     # Usage between low and medium is YELLOW
-                          # Usage above medium is RED
-
-  # Show detailed per-core statistics
-  show_detailed_stats: true
-
-  # Start with all servers collapsed (false = expanded by default)
-  start_collapsed: false
+display: {}

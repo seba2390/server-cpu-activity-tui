@@ -42,9 +42,6 @@ def temp_config_file():
             "ui_refresh_interval": 0.5,
         },
         "display": {
-            "low_threshold": 30,
-            "medium_threshold": 70,
-            "start_collapsed": False,
         },
     }
 
@@ -160,8 +157,6 @@ def test_initialize_components(app):
     # Check widgets
     assert all(isinstance(widget, ServerWidget) for widget in app.server_widgets)
     assert app.server_widgets[0].server_name == "test-server1"
-    assert app.server_widgets[0].low_threshold == 30
-    assert app.server_widgets[0].medium_threshold == 70
 
 
 def test_initialize_components_with_defaults(temp_config_file):
@@ -189,7 +184,6 @@ def test_initialize_components_with_defaults(temp_config_file):
     # Check defaults were applied
     assert app.monitors[0].poll_interval == 2.0  # Default
     assert app.ssh_clients[0].connection_timeout == 10  # Default
-    assert app.server_widgets[0].low_threshold == 30  # Default
 
 
 def test_initialize_components_missing_field():
