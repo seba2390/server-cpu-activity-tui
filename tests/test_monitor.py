@@ -1,12 +1,12 @@
 """Tests for CPU monitor module."""
 
 import asyncio
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from src.monitor import CPUMonitor, ServerMetrics, CPUCore, MemoryInfo
-from src.ssh_client import SSHClient, ServerConfig, ConnectionStatus
+from src.monitor import CPUCore, CPUMonitor, ServerMetrics
+from src.ssh_client import ConnectionStatus, ServerConfig, SSHClient
 
 
 @pytest.fixture
@@ -212,7 +212,7 @@ cpu1 250 50 75 1250 25 0 13 0 0 0
 async def test_parse_proc_stat_malformed_line():
     """Test parsing /proc/stat with malformed lines."""
     from src.monitor import CPUMonitor
-    from src.ssh_client import SSHClient, ServerConfig
+    from src.ssh_client import ServerConfig, SSHClient
 
     config = ServerConfig(
         name="test", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"
@@ -239,7 +239,7 @@ cpu1 250 50 75 1250 25 0 13 0 0 0
 async def test_parse_proc_stat_incomplete_data():
     """Test parsing /proc/stat with incomplete CPU data."""
     from src.monitor import CPUMonitor
-    from src.ssh_client import SSHClient, ServerConfig
+    from src.ssh_client import ServerConfig, SSHClient
 
     config = ServerConfig(
         name="test", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"
@@ -286,7 +286,7 @@ async def test_calculate_cpu_usage_zero_total_diff(cpu_monitor):
 async def test_calculate_cpu_usage_100_percent():
     """Test CPU usage calculation at 100%."""
     from src.monitor import CPUMonitor
-    from src.ssh_client import SSHClient, ServerConfig
+    from src.ssh_client import ServerConfig, SSHClient
 
     config = ServerConfig(
         name="test", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"
@@ -352,7 +352,7 @@ async def test_monitor_start_when_already_running(cpu_monitor):
 async def test_collect_cpu_metrics_with_no_previous_stats():
     """Test collecting metrics on first run (no previous stats)."""
     from src.monitor import CPUMonitor
-    from src.ssh_client import SSHClient, ServerConfig
+    from src.ssh_client import ServerConfig, SSHClient
 
     config = ServerConfig(
         name="test", host="192.168.1.100", username="testuser", key_path="/tmp/test_key.pem"

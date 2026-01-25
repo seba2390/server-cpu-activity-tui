@@ -2,19 +2,39 @@
 
 import logging
 import time
-from typing import Optional, Callable
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict
+
+
+try:
+    from typing import NotRequired  # Python 3.11+
+except ImportError:
+    from typing_extensions import NotRequired  # Python < 3.11
 
 from textual.app import App, ComposeResult
-from textual.containers import Vertical, VerticalScroll, Horizontal, Container
-from textual.widgets import Header, Footer, Static, Button, Input, Label, OptionList, Select
-from textual.widgets.option_list import Option
-from textual.screen import ModalScreen
-from textual.reactive import reactive
 from textual.binding import Binding
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.reactive import reactive
+from textual.screen import ModalScreen
+from textual.widgets import Button, Footer, Header, Input, Label, OptionList, Static
+from textual.widgets.option_list import Option
 
-from .monitor import ServerMetrics, CPUCore, MemoryInfo
+from .monitor import CPUCore, MemoryInfo, ServerMetrics
+
+
+if TYPE_CHECKING:
+    from .main import ServerConfigDict
 
 logger = logging.getLogger(__name__)
+
+
+class FieldDefinition(TypedDict):
+    """Type definition for field definitions in AddServerScreen."""
+    id: str
+    widget_id: NotRequired[str]  # Widget ID (deprecated, kept for compatibility)
+    label_id: NotRequired[str | None]  # Label widget ID, can be None for buttons
+    type: NotRequired[str]  # 'input', 'optionlist', or 'button'
+    auth_type: NotRequired[str]  # 'key' or 'password', if field is auth-specific
 
 
 class ConfirmDeleteScreen(ModalScreen[bool]):
@@ -56,7 +76,7 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, server_name: str, **kwargs):
+    def __init__(self, server_name: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.server_name = server_name
         logger.info(f"ConfirmDeleteScreen initialized for server: {server_name}")
@@ -83,7 +103,7 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class AddServerScreen(ModalScreen[Optional[dict]]):
+class AddServerScreen(ModalScreen["Optional[ServerConfigDict]"]):
     """Modal screen for adding a new server with arrow key navigation."""
 
     CSS = """
@@ -185,10 +205,10 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         Binding("left", "navigate_left", "Left", show=False),
     ]
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.auth_method = "key"  # Default authentication method
-        self.fields = []  # List of field definitions
+        self.fields: list[FieldDefinition] = []  # List of field definitions
         self.current_field_index = 0
         self.in_edit_mode = False
         logger.info("AddServerScreen initialized with two-level navigation")
@@ -294,15 +314,17 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
                 label = self.query_one(f"#{label_id}", Label)
                 label.update(text)
                 label.remove_class("highlighted")
-            except:
-                pass  # Label might not exist yet
+            except Exception as e:
+                # Label might not exist yet during initial setup
+                logger.info(f"Could not update label {label_id}: {e}")
 
         # Reset button highlights
         for btn_id in ["add-btn", "cancel-btn"]:
             try:
                 self.query_one(f"#{btn_id}", Button).remove_class("highlighted-button")
-            except:
-                pass
+            except Exception as e:
+                # Button might not exist yet during initial setup
+                logger.info(f"Could not update button {btn_id}: {e}")
 
         # Get current field
         field = self._get_current_field()
@@ -338,19 +360,19 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
         # Scroll to the highlighted field
         try:
             widget = self.query_one(f"#{field['id']}")
-            if field['type'] == 'button':
+            if field["type"] == "button" and hasattr(widget, "scroll_visible"):
                 widget.scroll_visible(animate=False)
             else:
                 # Get the field container (the Vertical holding the input)
                 field_container = widget.parent
-                if field_container:
+                if field_container and hasattr(field_container, "scroll_visible"):
                     field_container.scroll_visible(animate=False)
         except Exception as e:
             logger.warning(f"Failed to scroll to field {field['id']}: {e}")
 
         logger.info(f"Highlighted field {field['id']}, edit_mode={self.in_edit_mode}")
 
-    def _get_current_field(self):
+    def _get_current_field(self) -> Optional[FieldDefinition]:
         """Get the current field definition."""
         if 0 <= self.current_field_index < len(self.fields):
             return self.fields[self.current_field_index]
@@ -545,7 +567,7 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
             # Exit edit mode and move to next field
             self.action_exit_field()
             self._navigate_to_next_valid_field()
-            logger.info(f"Auth method selected, moved to next field")
+            logger.info("Auth method selected, moved to next field")
 
     def _update_auth_fields(self) -> None:
         """Show/hide authentication fields based on selected method."""
@@ -608,7 +630,7 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
             return
 
         # Build server config with auth_method
-        server_config = {
+        server_config_dict: dict[str, str | None] = {
             "name": name,
             "host": host,
             "username": username,
@@ -624,7 +646,7 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
                 self.query_one("#input-keypath", Input).focus()
                 return
 
-            server_config["key_path"] = key_path
+            server_config_dict["key_path"] = key_path
         else:
             # For password auth, collect password but DON'T save it to config
             # It will be stored in memory only (passed to add_server callback)
@@ -636,7 +658,10 @@ class AddServerScreen(ModalScreen[Optional[dict]]):
                 return
 
             # Pass password in memory, but it won't be saved to config file
-            server_config["_password"] = password  # Temporary key for in-memory use
+            server_config_dict["_password"] = password  # Temporary key for in-memory use
+
+        # Cast to ServerConfigDict
+        server_config = cast("ServerConfigDict", server_config_dict)
 
         logger.info(f"Server configuration validated successfully: {name}")
 
@@ -649,7 +674,7 @@ class CPUCoreWidget(Static):
 
     usage_percent = reactive(0.0)
 
-    def __init__(self, core: CPUCore, **kwargs):
+    def __init__(self, core: CPUCore, **kwargs: Any) -> None:
         """Initialize CPU core widget.
 
         Args:
@@ -686,7 +711,7 @@ class CPUCoreWidget(Static):
 class MemoryWidget(Static):
     """Widget displaying memory usage."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize memory widget."""
         super().__init__(**kwargs)
         self.memory_info: Optional[MemoryInfo] = None
@@ -838,8 +863,7 @@ class HistoryPlotWidget(Static):
             lines = []
             border_width = self.plot_width + 2  # +2 for padding around title
             lines.append("[dim]┌" + "─" * border_width + "┐[/dim]")
-            for _ in range(6):
-                lines.append("[dim]│[/dim]" + " " * border_width + "[dim]│[/dim]")
+            lines.extend("[dim]│[/dim]" + " " * border_width + "[dim]│[/dim]" for _ in range(6))
             lines.append("[dim]└" + "─" * border_width + "┘[/dim]")
             lines.append("[dim italic]  Collecting data... waiting for samples[/dim italic]")
             return "\n".join(lines)
@@ -850,15 +874,6 @@ class HistoryPlotWidget(Static):
 
         # Get usage values
         usages = [u for _, u in self.history_data]
-
-        # Calculate statistics
-        current_usage = usages[-1] if usages else 0
-        avg_usage = sum(usages) / len(usages) if usages else 0
-        max_usage = max(usages) if usages else 0
-        min_usage = min(usages) if usages else 0
-
-        # Time range
-        time_range = int(self.history_data[-1][0] - self.history_data[0][0]) if self.history_data else 0
 
         # Create braille line plot
         plot_rows = self._create_braille_line_plot(usages, plot_width, plot_height)
@@ -876,7 +891,7 @@ class HistoryPlotWidget(Static):
         lines.append(f"[dim]     ┌{left_border}[/dim][bold dodger_blue2]{title}[/bold dodger_blue2][dim]{right_border}┐[/dim]")
 
         # Plot rows with Y-axis
-        for i, (label, row) in enumerate(zip(y_labels, plot_rows)):
+        for _i, (label, row) in enumerate(zip(y_labels, plot_rows)):
             lines.append(f"[dim]{label} │[/dim]{row}[dim]│[/dim]")
 
         # Bottom border
@@ -1057,15 +1072,13 @@ class ServerWidget(Static):
         if not self.header_widget:
             return
 
-        # Animate spinner (increment for next refresh)
-        self._spinner_index = (self._spinner_index + 1) % len(self.SPINNER_FRAMES)
-
         # Build header
         expand_icon = "▼" if self.expanded else "▶"
         selection_marker = "→" if self.is_selected else " "
 
         if self.metrics is None:
-            # Show animated spinner while initializing
+            # Animate spinner only when showing it (increment for next refresh)
+            self._spinner_index = (self._spinner_index + 1) % len(self.SPINNER_FRAMES)
             spinner = self.SPINNER_FRAMES[self._spinner_index]
             status = f"[cyan]{spinner} Initializing...[/cyan]"
         elif not self.metrics.connected:
@@ -1137,8 +1150,7 @@ class StatusBar(Static):
         self.average_cpu = average_cpu
 
         if last_update_time:
-            from datetime import datetime
-            dt = datetime.fromtimestamp(last_update_time)
+            dt = datetime.fromtimestamp(last_update_time, tz=timezone.utc)
             self.last_update = dt.strftime("%H:%M:%S")
         else:
             self.last_update = "--:--:--"
@@ -1180,7 +1192,7 @@ class StatusBar(Static):
         return self._status_text
 
 
-class MonitoringApp(App):
+class MonitoringApp(App[None]):
     """Main TUI application for CPU monitoring."""
 
     CSS = """
@@ -1289,14 +1301,13 @@ class MonitoringApp(App):
         Binding("r", "refresh", "Refresh", show=True),
         Binding("a", "add_server", "Add", show=True),
         Binding("d", "delete_server", "Delete", show=True),
-        Binding("p", "command_palette", "Palette", show=True),
     ]
 
     def __init__(
         self,
         server_widgets: list[ServerWidget],
         on_delete_server: Optional[Callable[[str], None]] = None,
-        on_add_server: Optional[Callable[[dict], None]] = None,
+        on_add_server: Optional[Callable[["ServerConfigDict"], None]] = None,
         **kwargs
     ):
         """Initialize the monitoring app.
@@ -1393,7 +1404,7 @@ class MonitoringApp(App):
             logger.info(f"User action: delete_server initiated for '{server_name}'")
             self.push_screen(ConfirmDeleteScreen(server_name), self._handle_delete_confirm)
 
-    def _handle_delete_confirm(self, confirmed: bool) -> None:
+    def _handle_delete_confirm(self, confirmed: bool | None) -> None:
         """Handle delete confirmation result."""
         if confirmed and 0 <= self.selected_index < len(self.server_widgets):
             widget = self.server_widgets[self.selected_index]
@@ -1427,7 +1438,7 @@ class MonitoringApp(App):
         logger.info("User action: add_server initiated, opening AddServerScreen")
         self.push_screen(AddServerScreen(), self._handle_add_server)
 
-    def _handle_add_server(self, server_config: Optional[dict]) -> None:
+    def _handle_add_server(self, server_config: "Optional[ServerConfigDict]") -> None:
         """Handle add server result."""
         if server_config:
             logger.info(f"Add server confirmed: {server_config['name']} ({server_config['host']})")

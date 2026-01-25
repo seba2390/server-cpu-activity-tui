@@ -8,6 +8,7 @@ from typing import Optional
 
 import asyncssh
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,6 +22,7 @@ class ServerConfig:
     auth_method: str = "key"  # "key" or "password"
     key_path: Optional[str] = None
     password: Optional[str] = None
+    verify_host_key: bool = True  # Host key verification enabled by default for security
 
     def __post_init__(self):
         """Validate authentication configuration."""
@@ -91,7 +93,7 @@ class SSHClient:
             connect_kwargs = {
                 "host": self.config.host,
                 "username": self.config.username,
-                "known_hosts": None,  # Disable host key checking for simplicity
+                "known_hosts": None if not self.config.verify_host_key else (),  # Use default known_hosts if enabled
             }
 
             if self.config.auth_method == "password":
@@ -105,6 +107,11 @@ class SSHClient:
                 logger.info(f"{self.config.name}: Using password authentication")
             else:
                 # Key-based authentication
+                if not self.config.key_path:
+                    error_msg = "SSH key path not provided for key authentication"
+                    logger.error(f"{self.config.name}: {error_msg}")
+                    self.status = ConnectionStatus(connected=False, error_message=error_msg)
+                    return False
                 key_path = Path(self.config.key_path).expanduser()
                 if not key_path.exists():
                     error_msg = f"SSH key not found: {key_path}"
@@ -135,7 +142,7 @@ class SSHClient:
                     self.status = ConnectionStatus(connected=False, error_message=error_msg)
 
                 except (asyncssh.Error, OSError) as e:
-                    error_msg = f"Connection failed: {str(e)}"
+                    error_msg = f"Connection failed: {e!s}"
                     logger.warning(f"{self.config.name}: Attempt {attempt + 1}/{self.max_retries} - {error_msg}")
                     self.status = ConnectionStatus(connected=False, error_message=error_msg)
 
@@ -179,12 +186,17 @@ class SSHClient:
 
             try:
                 result = await self._connection.run(command, check=True)
-                output_length = len(result.stdout)
-                logger.info(f"{self.config.name}: Command executed successfully, output length: {output_length} bytes")
-                return result.stdout.strip()
+                if result.stdout:
+                    output_length = len(result.stdout)
+                    logger.info(f"{self.config.name}: Command executed successfully, output length: {output_length} bytes")
+                    # Ensure output is string and strip
+                    output = result.stdout if isinstance(result.stdout, str) else result.stdout.decode("utf-8")
+                    return output.strip()
+                return None
 
             except asyncssh.ProcessError as e:
-                stderr_preview = e.stderr[:100] if len(e.stderr) <= 100 else e.stderr[:97] + "..."
+                stderr = e.stderr or ""
+                stderr_preview = stderr[:100] if len(stderr) <= 100 else stderr[:97] + "..."
                 logger.error(f"{self.config.name}: Command failed: {cmd_display} - stderr: {stderr_preview}")
                 return None
 
@@ -214,10 +226,17 @@ class SSHClient:
         Returns:
             True if connected, False otherwise
         """
-        if await self.is_connected():
-            return True
+        # Use lock to prevent race condition during reconnection
+        async with self._lock:
+            # Check if already connected
+            is_conn = self._connection is not None and not self._connection.is_closed()
+            if is_conn:
+                return True
 
-        logger.info(f"{self.config.name}: Connection not active, attempting to reconnect...")
+            # Need to reconnect - release lock temporarily to allow connect() to acquire it
+            logger.info(f"{self.config.name}: Connection not active, attempting to reconnect...")
+
+        # Reconnect outside the lock
         result = await self.connect()
         if result:
             logger.info(f"{self.config.name}: Reconnection successful")

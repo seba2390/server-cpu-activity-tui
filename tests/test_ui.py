@@ -1,11 +1,11 @@
 """Tests for TUI components."""
 
-import pytest
 from unittest.mock import Mock
+
 from textual.widgets import Static
 
-from src.ui import CPUCoreWidget, ServerWidget, MemoryWidget, HistoryPlotWidget
-from src.monitor import CPUCore, ServerMetrics, MemoryInfo
+from src.monitor import CPUCore, MemoryInfo, ServerMetrics
+from src.ui import CPUCoreWidget, HistoryPlotWidget, MemoryWidget, ServerWidget
 
 
 def test_cpu_core_widget_initialization():
@@ -181,8 +181,9 @@ def test_confirm_delete_screen_initialization():
 
 def test_confirm_delete_screen_yes_button():
     """Test ConfirmDeleteScreen yes button."""
-    from src.ui import ConfirmDeleteScreen
     from textual.widgets import Button
+
+    from src.ui import ConfirmDeleteScreen
 
     screen = ConfirmDeleteScreen(server_name="test-server")
 
@@ -201,8 +202,9 @@ def test_confirm_delete_screen_yes_button():
 
 def test_confirm_delete_screen_no_button():
     """Test ConfirmDeleteScreen no button."""
-    from src.ui import ConfirmDeleteScreen
     from textual.widgets import Button
+
+    from src.ui import ConfirmDeleteScreen
 
     screen = ConfirmDeleteScreen(server_name="test-server")
 
@@ -269,8 +271,9 @@ def test_add_server_screen_action_cancel():
 
 def test_add_server_screen_cancel_button():
     """Test AddServerScreen cancel button."""
-    from src.ui import AddServerScreen
     from textual.widgets import Button
+
+    from src.ui import AddServerScreen
 
     screen = AddServerScreen()
 
@@ -524,8 +527,9 @@ def test_monitoring_app_action_delete_server_no_servers():
 
 def test_monitoring_app_add_server_widget():
     """Test MonitoringApp add_server_widget method."""
-    from src.ui import MonitoringApp, ServerWidget
     from unittest.mock import MagicMock
+
+    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
     app = MonitoringApp(server_widgets=widgets)
@@ -642,7 +646,7 @@ def test_server_widget_expanded_cores_displayed():
     widget.refresh_display()
 
     # Cores container should be visible
-    assert widget.cores_container.display == True
+    assert widget.cores_container.display is True
 
 
 def test_server_widget_safe_id_generation():

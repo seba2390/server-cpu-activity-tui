@@ -1,16 +1,17 @@
-.PHONY: help setup run stop test clean lint format check
+.PHONY: help setup run stop test clean lint typecheck format check
 
 # Default target
 help:
 	@echo "CPU Monitoring TUI - Available Commands:"
-	@echo "  make setup    - Install dependencies and set up virtual environment"
-	@echo "  make run      - Start the monitoring application"
-	@echo "  make stop     - Stop the monitoring application"
-	@echo "  make test     - Run test suite with coverage"
-	@echo "  make lint     - Run code linters (flake8, mypy)"
-	@echo "  make format   - Format code with black"
-	@echo "  make check    - Run linters and tests"
-	@echo "  make clean    - Remove generated files and caches"
+	@echo "  make setup      - Install dependencies and set up virtual environment"
+	@echo "  make run        - Start the monitoring application"
+	@echo "  make stop       - Stop the monitoring application"
+	@echo "  make test       - Run test suite with coverage"
+	@echo "  make lint       - Run code linter (ruff)"
+	@echo "  make typecheck  - Run type checker (pyright)"
+	@echo "  make format     - Format code with ruff"
+	@echo "  make check      - Run linter, type checker, and tests"
+	@echo "  make clean      - Remove generated files and caches"
 
 # Python and virtual environment settings
 PYTHON := python3
@@ -60,28 +61,36 @@ endif
 	@echo "Running test suite..."
 	$(VENV_BIN)/pytest -v --tb=short --color=yes --timeout=10
 
-# Run linters
+# Run linter
 lint:
 ifeq ($(VENV_EXISTS), 0)
 	@echo "Virtual environment not found. Running setup first..."
 	@$(MAKE) setup
 endif
-	@echo "Running flake8..."
-	$(VENV_BIN)/flake8 src tests --max-line-length=100 --extend-ignore=E203,W503
-	@echo "Running mypy..."
-	$(VENV_BIN)/mypy src --ignore-missing-imports
+	@echo "Running ruff linter..."
+	$(VENV_BIN)/ruff check src tests
 
-# Format code with black
+# Run type checker
+typecheck:
+ifeq ($(VENV_EXISTS), 0)
+	@echo "Virtual environment not found. Running setup first..."
+	@$(MAKE) setup
+endif
+	@echo "Running pyright type checker..."
+	$(VENV_BIN)/pyright src tests
+
+# Format code with ruff
 format:
 ifeq ($(VENV_EXISTS), 0)
 	@echo "Virtual environment not found. Running setup first..."
 	@$(MAKE) setup
 endif
-	@echo "Formatting code with black..."
-	$(VENV_BIN)/black src tests --line-length=100
+	@echo "Formatting code with ruff..."
+	$(VENV_BIN)/ruff check --fix src tests
+	$(VENV_BIN)/ruff format src tests
 
-# Check: Run linters and tests
-check: lint test
+# Check: Run linter, type checker, and tests
+check: lint typecheck test
 	@echo "All checks passed!"
 
 # Clean generated files
@@ -92,6 +101,8 @@ clean:
 	rm -rf htmlcov
 	rm -rf .coverage
 	rm -rf .mypy_cache
+	rm -rf .ruff_cache
+	rm -rf .pyright
 	rm -rf src/__pycache__
 	rm -rf tests/__pycache__
 	rm -rf src/*.pyc

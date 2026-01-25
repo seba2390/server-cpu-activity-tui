@@ -8,6 +8,7 @@ from typing import Optional
 
 from .ssh_client import SSHClient
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -106,7 +107,6 @@ class CPUMonitor:
                 await self._task
             except asyncio.CancelledError:
                 logger.info(f"{self.ssh_client.config.name}: Monitor task cancelled successfully")
-                pass
 
         logger.info(f"{self.ssh_client.config.name}: CPU monitoring stopped")
 
@@ -132,6 +132,8 @@ class CPUMonitor:
         """Main monitoring loop that periodically collects CPU data."""
         logger.info(f"{self.ssh_client.config.name}: Monitor loop started")
         loop_count = 0
+        consecutive_failures = 0
+        max_consecutive_failures = 10
 
         while self._running:
             try:
@@ -139,7 +141,8 @@ class CPUMonitor:
 
                 # Ensure SSH connection is active
                 if not await self.ssh_client.ensure_connected():
-                    logger.warning(f"{self.ssh_client.config.name}: Not connected, creating disconnected metrics (loop {loop_count})")
+                    consecutive_failures += 1
+                    logger.warning(f"{self.ssh_client.config.name}: Not connected, creating disconnected metrics (loop {loop_count}, consecutive failures: {consecutive_failures}/{max_consecutive_failures})")
                     async with self._lock:
                         self._latest_metrics = ServerMetrics(
                             server_name=self.ssh_client.config.name,
@@ -150,8 +153,18 @@ class CPUMonitor:
                             error_message=self.ssh_client.status.error_message,
                         )
 
+                    # Stop monitoring if too many consecutive failures
+                    if consecutive_failures >= max_consecutive_failures:
+                        logger.error(f"{self.ssh_client.config.name}: Maximum consecutive failures ({max_consecutive_failures}) reached, stopping monitor")
+                        break
+
                     await asyncio.sleep(self.poll_interval)
                     continue
+
+                # Reset failure counter on successful connection
+                if consecutive_failures > 0:
+                    logger.info(f"{self.ssh_client.config.name}: Connection recovered, resetting failure counter (was {consecutive_failures})")
+                    consecutive_failures = 0
 
                 # Collect CPU metrics
                 logger.info(f"{self.ssh_client.config.name}: Collecting CPU metrics (loop {loop_count})")
@@ -166,9 +179,13 @@ class CPUMonitor:
                         self._cpu_history.append((current_time, metrics.overall_usage))
 
                         # Trim history to keep only data within the window
+                        # Use max() to handle clock skew - keep at least last entry
                         cutoff_time = current_time - self.history_window
                         before_trim = len(self._cpu_history)
                         self._cpu_history = [(t, u) for t, u in self._cpu_history if t >= cutoff_time]
+                        # If clock skew cleared all history, keep at least the current entry
+                        if not self._cpu_history:
+                            self._cpu_history = [(current_time, metrics.overall_usage)]
                         after_trim = len(self._cpu_history)
 
                         if loop_count % 20 == 0:  # Log every 20 loops to avoid spam
@@ -179,9 +196,14 @@ class CPUMonitor:
                 logger.info(f"{self.ssh_client.config.name}: Monitor loop cancelled")
                 break
             except Exception as e:
+                consecutive_failures += 1
                 logger.error(
-                    f"{self.ssh_client.config.name}: Error in monitoring loop (loop {loop_count}): {e}", exc_info=True
+                    f"{self.ssh_client.config.name}: Error in monitoring loop (loop {loop_count}, consecutive failures: {consecutive_failures}/{max_consecutive_failures}): {e}", exc_info=True
                 )
+                # Stop monitoring if too many consecutive failures
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.error(f"{self.ssh_client.config.name}: Maximum consecutive failures ({max_consecutive_failures}) reached, stopping monitor")
+                    break
 
             await asyncio.sleep(self.poll_interval)
 
@@ -253,8 +275,7 @@ class CPUMonitor:
             else:
                 # First reading, just create cores with 0% usage
                 logger.info(f"{self.ssh_client.config.name}: First reading, initializing cores with 0% usage")
-                for core_id in current_stats.keys():
-                    cores.append(CPUCore(core_id=core_id, usage_percent=0.0))
+                cores.extend(CPUCore(core_id=core_id, usage_percent=0.0) for core_id in current_stats)
 
             # Store current stats for next calculation
             self._prev_stats = current_stats

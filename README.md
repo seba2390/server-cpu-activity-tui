@@ -9,7 +9,7 @@ A Python-based Terminal User Interface (TUI) for real-time monitoring of CPU cor
 - **Secure password handling**: Prompted at startup, stored in memory only
 - Interactive keyboard navigation with two-level input system
 - Collapsible server views with CPU history graphs
-- Color-coded usage levels (green/yellow/red)
+- Blue color-coded progress bars for CPU usage visualization
 - Dynamic server management (add/delete servers while running)
 - Automatic reconnection on network failures
 - YAML configuration (passwords never saved to config)
@@ -200,5 +200,28 @@ Makefile                 # Build commands
 - pyyaml - Configuration
 
 **Development:**
-- pytest, pytest-asyncio, pytest-cov
-- black, mypy, flake8
+- pytest, pytest-asyncio, pytest-cov, pytest-timeout
+- ruff - Fast Python linter and formatter
+- pyright - Static type checker
+
+## Development
+
+### Code Quality Tools
+
+This project uses **Ruff** for linting/formatting and **Pyright** for type checking:
+
+```bash
+# Run linter
+make lint
+
+# Run type checker
+make typecheck
+
+# Auto-format code
+make format
+
+# Run all checks (lint + typecheck + tests)
+make check
+```
+
+Configuration is in [pyproject.toml](pyproject.toml).

@@ -2,11 +2,11 @@
 
 import asyncio
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from src.ssh_client import SSHClient, ServerConfig, ConnectionStatus
+from src.ssh_client import ConnectionStatus, ServerConfig, SSHClient
 
 
 @pytest.fixture
@@ -47,13 +47,15 @@ async def test_connect_success(ssh_client):
     async def mock_connect(*args, **kwargs):
         return mock_connection
 
-    with patch("src.ssh_client.asyncssh.connect", new=mock_connect):
-        with patch.object(Path, "exists", return_value=True):
-            result = await ssh_client.connect()
+    with (
+        patch("src.ssh_client.asyncssh.connect", new=mock_connect),
+        patch.object(Path, "exists", return_value=True),
+    ):
+        result = await ssh_client.connect()
 
-            assert result is True
-            assert ssh_client.status.connected
-            assert ssh_client._connection is not None
+        assert result is True
+        assert ssh_client.status.connected
+        assert ssh_client._connection is not None
 
 
 @pytest.mark.asyncio
@@ -70,13 +72,15 @@ async def test_connect_key_not_found(ssh_client):
 @pytest.mark.asyncio
 async def test_connect_timeout(ssh_client):
     """Test connection timeout."""
-    with patch("src.ssh_client.asyncssh.connect", side_effect=asyncio.TimeoutError()):
-        with patch.object(Path, "exists", return_value=True):
-            result = await ssh_client.connect()
+    with (
+        patch("src.ssh_client.asyncssh.connect", side_effect=asyncio.TimeoutError()),
+        patch.object(Path, "exists", return_value=True),
+    ):
+        result = await ssh_client.connect()
 
-            assert result is False
-            assert not ssh_client.status.connected
-            assert "timeout" in ssh_client.status.error_message.lower()
+        assert result is False
+        assert not ssh_client.status.connected
+        assert "timeout" in ssh_client.status.error_message.lower()
 
 
 @pytest.mark.asyncio
@@ -163,12 +167,14 @@ async def test_ensure_connected_reconnect(ssh_client):
     async def mock_connect(*args, **kwargs):
         return mock_connection
 
-    with patch("src.ssh_client.asyncssh.connect", new=mock_connect):
-        with patch.object(Path, "exists", return_value=True):
-            result = await ssh_client.ensure_connected()
+    with (
+        patch("src.ssh_client.asyncssh.connect", new=mock_connect),
+        patch.object(Path, "exists", return_value=True),
+    ):
+        result = await ssh_client.ensure_connected()
 
-            assert result is True
-            assert ssh_client._connection is not None
+        assert result is True
+        assert ssh_client._connection is not None
 
 
 @pytest.mark.asyncio
@@ -198,15 +204,14 @@ async def test_connect_retry_logic(ssh_client):
 @pytest.mark.asyncio
 async def test_connect_exhausted_retries(ssh_client):
     """Test connection when all retries are exhausted."""
-    with patch.object(Path, "exists", return_value=True):
-        # All attempts fail
-        with patch(
-            "src.ssh_client.asyncssh.connect", side_effect=OSError("Connection refused")
-        ):
-            result = await ssh_client.connect()
+    with (
+        patch.object(Path, "exists", return_value=True),
+        patch("src.ssh_client.asyncssh.connect", side_effect=OSError("Connection refused")),
+    ):
+        result = await ssh_client.connect()
 
-            assert result is False
-            assert not ssh_client.status.connected
+        assert result is False
+        assert not ssh_client.status.connected
 
 
 @pytest.mark.asyncio

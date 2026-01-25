@@ -1,8 +1,9 @@
 """Tests for AddServerScreen two-level navigation system."""
 
-import pytest
 from unittest.mock import Mock, patch
-from textual.widgets import Input, OptionList, Button
+
+import pytest
+from textual.widgets import Input
 
 from src.ui import AddServerScreen
 
@@ -27,7 +28,7 @@ class TestAddServerScreenTwoLevelNavigation:
         # Simulate mount by calling on_mount directly
         # Note: This won't work perfectly without an app context,
         # but we can test the structure
-        assert hasattr(screen, 'on_mount')
+        assert hasattr(screen, "on_mount")
         assert callable(screen.on_mount)
 
     def test_get_current_field_valid_index(self):
@@ -176,7 +177,7 @@ class TestAddServerScreenTwoLevelNavigation:
         screen.in_edit_mode = True
 
         # Mock the widget and its methods
-        with patch.object(screen, 'query_one') as mock_query:
+        with patch.object(screen, "query_one") as mock_query:
             mock_input = Mock(spec=Input)
             mock_query.return_value = mock_input
             screen.focus = Mock()
@@ -265,14 +266,14 @@ class TestAddServerScreenTwoLevelNavigation:
         screen.auth_method = "key"
 
         # Mock the containers
-        with patch.object(screen, 'query_one') as mock_query:
+        with patch.object(screen, "query_one") as mock_query:
             mock_key_container = Mock()
             mock_password_container = Mock()
 
             def side_effect(selector):
                 if selector == "#key-container":
                     return mock_key_container
-                elif selector == "#password-container":
+                if selector == "#password-container":
                     return mock_password_container
                 return Mock()
 
@@ -388,13 +389,13 @@ class TestAddServerScreenTwoLevelNavigation:
         """Test that all required action methods exist."""
         screen = AddServerScreen()
 
-        assert hasattr(screen, 'action_navigate_up')
-        assert hasattr(screen, 'action_navigate_right')
-        assert hasattr(screen, 'action_navigate_left')
-        assert hasattr(screen, 'action_enter_field')
-        assert hasattr(screen, 'action_exit_field')
-        assert hasattr(screen, 'action_cancel')
-        assert hasattr(screen, 'action_submit')
+        assert hasattr(screen, "action_navigate_up")
+        assert hasattr(screen, "action_navigate_right")
+        assert hasattr(screen, "action_navigate_left")
+        assert hasattr(screen, "action_enter_field")
+        assert hasattr(screen, "action_exit_field")
+        assert hasattr(screen, "action_cancel")
+        assert hasattr(screen, "action_submit")
 
         assert callable(screen.action_navigate_up)
         assert callable(screen.action_navigate_down)
@@ -409,11 +410,11 @@ class TestAddServerScreenTwoLevelNavigation:
         """Test that all required helper methods exist."""
         screen = AddServerScreen()
 
-        assert hasattr(screen, '_get_current_field')
-        assert hasattr(screen, '_update_field_highlights')
-        assert hasattr(screen, '_navigate_to_next_valid_field')
-        assert hasattr(screen, '_navigate_to_prev_valid_field')
-        assert hasattr(screen, '_update_auth_fields')
+        assert hasattr(screen, "_get_current_field")
+        assert hasattr(screen, "_update_field_highlights")
+        assert hasattr(screen, "_navigate_to_next_valid_field")
+        assert hasattr(screen, "_navigate_to_prev_valid_field")
+        assert hasattr(screen, "_update_auth_fields")
 
         assert callable(screen._get_current_field)
         assert callable(screen._update_field_highlights)
@@ -463,7 +464,7 @@ class TestAddServerScreenValidation:
         screen.dismiss = Mock()
 
         # Mock query_one to return inputs with empty values
-        with patch.object(screen, 'query_one') as mock_query:
+        with patch.object(screen, "query_one") as mock_query:
             def side_effect(selector, widget_type=None):
                 mock = Mock(spec=Input)
                 # Create a mock that has a value attribute that returns empty string

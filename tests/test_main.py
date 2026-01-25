@@ -1,17 +1,18 @@
 """Tests for main application module."""
 
 import asyncio
+import contextlib
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 import yaml
 
 from src.main import CPUMonitoringApp
-from src.ssh_client import SSHClient, ServerConfig
 from src.monitor import CPUMonitor
-from src.ui import ServerWidget, MonitoringApp
+from src.ssh_client import SSHClient
+from src.ui import ServerWidget
 
 
 @pytest.fixture
@@ -64,7 +65,7 @@ def app(temp_config_file):
 def test_app_initialization(app, temp_config_file):
     """Test app initialization."""
     assert app.config_path == temp_config_file
-    assert app.config == {}
+    assert app.config == {"servers": [], "monitoring": {}, "display": {}}
     assert app.ssh_clients == []
     assert app.monitors == []
     assert app.server_widgets == []
@@ -294,7 +295,7 @@ def test_save_config(app):
     app.save_config()
 
     # Reload and verify
-    with open(app.config_path, "r") as f:
+    with open(app.config_path) as f:
         saved_config = yaml.safe_load(f)
 
     assert len(saved_config["servers"]) == 3
@@ -434,7 +435,7 @@ async def test_ui_update_loop(app):
     app.config.setdefault("monitoring", {})["ui_refresh_interval"] = 0.01
 
     # Mock monitors to return metrics
-    from src.monitor import ServerMetrics, CPUCore
+    from src.monitor import CPUCore, ServerMetrics
 
     test_metrics = ServerMetrics(
         server_name="test",
@@ -463,10 +464,8 @@ async def test_ui_update_loop(app):
         await asyncio.wait_for(loop_task, timeout=0.1)
     except asyncio.TimeoutError:
         loop_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await loop_task
-        except asyncio.CancelledError:
-            pass
 
     # Verify widgets were updated
     for widget in app.server_widgets:
@@ -522,10 +521,8 @@ async def test_ui_update_loop_with_error(app):
         await asyncio.wait_for(loop_task, timeout=1.0)
     except asyncio.TimeoutError:
         loop_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await loop_task
-        except asyncio.CancelledError:
-            pass
 
     # Should have encountered errors but not crashed
     assert error_count >= 3
@@ -546,11 +543,8 @@ async def test_run_async(app):
     mock_ui_app = MagicMock()
     mock_ui_app.run_async = AsyncMock(side_effect=KeyboardInterrupt())
 
-    with patch("src.main.MonitoringApp", return_value=mock_ui_app):
-        try:
-            await app.run_async()
-        except KeyboardInterrupt:
-            pass
+    with patch("src.main.MonitoringApp", return_value=mock_ui_app), contextlib.suppress(KeyboardInterrupt):
+        await app.run_async()
 
     # Verify start was called
     app.start_monitoring.assert_called_once()
@@ -589,10 +583,8 @@ def test_run(app):
     with patch("asyncio.run") as mock_run:
         mock_run.side_effect = KeyboardInterrupt()
 
-        try:
+        with contextlib.suppress(KeyboardInterrupt):
             app.run()
-        except KeyboardInterrupt:
-            pass
 
         mock_run.assert_called_once()
 

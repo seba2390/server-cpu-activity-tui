@@ -4,20 +4,70 @@ import asyncio
 import getpass
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
+
+
+try:
+    from typing import NotRequired  # Python 3.11+
+except ImportError:
+    from typing_extensions import NotRequired  # Python < 3.11
 
 import yaml
 
-from .ssh_client import SSHClient, ServerConfig
 from .monitor import CPUMonitor
+from .ssh_client import ServerConfig, SSHClient
 from .ui import MonitoringApp, ServerWidget
 
+
+class ServerConfigDict(TypedDict):
+    """Type definition for server configuration in YAML."""
+    name: str
+    host: str
+    username: str
+    auth_method: str
+    key_path: NotRequired[str]
+    _password: NotRequired[str]  # Runtime only, not saved to config
+    verify_host_key: NotRequired[bool]
+
+
+class MonitoringConfigDict(TypedDict, total=False):
+    """Type definition for monitoring configuration in YAML."""
+    poll_interval: float
+    ui_refresh_interval: float
+    history_window: int
+    connection_timeout: int
+    max_retries: int
+    retry_delay: int
+
+
+class DisplayConfigDict(TypedDict, total=False):
+    """Type definition for display configuration in YAML."""
+    plot_style: str
+
+
+class AppConfigDict(TypedDict):
+    """Type definition for application configuration in YAML."""
+    servers: list[ServerConfigDict]
+    monitoring: NotRequired[MonitoringConfigDict]
+    display: NotRequired[DisplayConfigDict]
+
+
 # Configure logging - only to file, not to terminal
+log_file = Path.home() / ".cpu_monitor" / "cpu_monitor.log"
+log_file.parent.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("cpu_monitor.log")],
+    handlers=[
+        RotatingFileHandler(
+            log_file,
+            maxBytes=10_000_000,  # 10MB
+            backupCount=5,
+        )
+    ],
 )
 
 logger = logging.getLogger(__name__)
@@ -33,12 +83,13 @@ class CPUMonitoringApp:
             config_path: Path to configuration file
         """
         self.config_path = config_path
-        self.config: dict = {}
+        self.config: AppConfigDict = {"servers": [], "monitoring": {}, "display": {}}
         self.ssh_clients: list[SSHClient] = []
         self.monitors: list[CPUMonitor] = []
         self.server_widgets: list[ServerWidget] = []
         self.ui_app: Optional[MonitoringApp] = None
-        self._ui_update_task: Optional[asyncio.Task] = None
+        self._ui_update_task: Optional[asyncio.Task[None]] = None
+        self._cleanup_tasks: list[asyncio.Task] = []  # Track cleanup tasks
         self._running = False
         logger.info(f"CPUMonitoringApp initialized with config_path: {config_path}")
 
@@ -53,7 +104,7 @@ class CPUMonitoringApp:
             sys.exit(1)
 
         try:
-            with open(config_file, "r") as f:
+            with open(config_file) as f:
                 self.config = yaml.safe_load(f)
 
             logger.info(f"Configuration loaded successfully from {config_file}")
@@ -93,7 +144,24 @@ class CPUMonitoringApp:
         max_retries = monitoring_config.get("max_retries", 3)
         retry_delay = monitoring_config.get("retry_delay", 5)
 
-        plot_style = "braille"  # Hardcoded to braille
+        # Validate configuration values
+        if poll_interval <= 0:
+            logger.error(f"Invalid poll_interval: {poll_interval}, using default 2.0")
+            poll_interval = 2.0
+        if history_window <= 0:
+            logger.error(f"Invalid history_window: {history_window}, using default 60")
+            history_window = 60
+        if connection_timeout <= 0:
+            logger.error(f"Invalid connection_timeout: {connection_timeout}, using default 10")
+            connection_timeout = 10
+        if max_retries < 0:
+            logger.error(f"Invalid max_retries: {max_retries}, using default 3")
+            max_retries = 3
+        if retry_delay < 0:
+            logger.error(f"Invalid retry_delay: {retry_delay}, using default 5")
+            retry_delay = 5
+
+        plot_style = display_config.get("plot_style", "braille")
 
         logger.info(f"Configuration parameters: poll_interval={poll_interval}s, history_window={history_window}s, ")
         logger.info(f"  connection_timeout={connection_timeout}s, max_retries={max_retries}, retry_delay={retry_delay}s")
@@ -105,6 +173,10 @@ class CPUMonitoringApp:
                 auth_method = server_config.get("auth_method", "key")
 
                 # Prompt for password if auth_method is "password"
+                # Security Note: Passwords are stored in memory only during runtime
+                # and are never written to config files or logs. They are held in
+                # ServerConfig dataclass instances and passed to SSH connections.
+                # For additional security, consider using SSH keys instead.
                 password = None
                 if auth_method == "password":
                     server_name = server_config["name"]
@@ -188,7 +260,6 @@ class CPUMonitoringApp:
                 await self._ui_update_task
             except asyncio.CancelledError:
                 logger.info("UI update task cancelled successfully")
-                pass
 
         # Stop all monitors
         logger.info(f"Stopping {len(self.monitors)} CPU monitors...")
@@ -202,6 +273,13 @@ class CPUMonitoringApp:
         for ssh_client in self.ssh_clients:
             await ssh_client.disconnect()
             logger.info(f"  Disconnected from: {ssh_client.config.name}")
+
+        # Wait for any pending cleanup tasks
+        if self._cleanup_tasks:
+            logger.info(f"Waiting for {len(self._cleanup_tasks)} cleanup tasks to complete...")
+            await asyncio.gather(*self._cleanup_tasks, return_exceptions=True)
+            self._cleanup_tasks.clear()
+            logger.info("All cleanup tasks completed")
 
         logger.info("All monitoring stopped and connections closed")
 
@@ -247,8 +325,9 @@ class CPUMonitoringApp:
             self.server_widgets.pop(idx)
 
             logger.info(f"  Components removed for '{server_name}', scheduling cleanup...")
-            # Schedule async cleanup
-            asyncio.create_task(self._cleanup_server(monitor, ssh_client))
+            # Schedule async cleanup and track task
+            cleanup_task = asyncio.create_task(self._cleanup_server(monitor, ssh_client))
+            self._cleanup_tasks.append(cleanup_task)
         else:
             logger.warning(f"  Server '{server_name}' not found in active components (may have been already removed)")
 
@@ -260,13 +339,16 @@ class CPUMonitoringApp:
         """Clean up server resources asynchronously."""
         server_name = ssh_client.config.name
         logger.info(f"Cleaning up resources for server: {server_name}")
-        await monitor.stop()
-        logger.info(f"  Monitor stopped for: {server_name}")
-        await ssh_client.disconnect()
-        logger.info(f"  SSH client disconnected for: {server_name}")
-        logger.info(f"Resource cleanup complete for: {server_name}")
+        try:
+            await monitor.stop()
+            logger.info(f"  Monitor stopped for: {server_name}")
+            await ssh_client.disconnect()
+            logger.info(f"  SSH client disconnected for: {server_name}")
+            logger.info(f"Resource cleanup complete for: {server_name}")
+        except Exception as e:
+            logger.error(f"Error during cleanup for {server_name}: {e}", exc_info=True)
 
-    def add_server(self, server_config: dict):
+    def add_server(self, server_config: ServerConfigDict):
         """Add a new server to the configuration and start monitoring.
 
         Args:
@@ -285,7 +367,6 @@ class CPUMonitoringApp:
 
         # Get configuration values
         monitoring_config = self.config.get("monitoring", {})
-        display_config = self.config.get("display", {})
 
         poll_interval = monitoring_config.get("poll_interval", 2.0)
         history_window = monitoring_config.get("history_window", 60)
@@ -293,18 +374,25 @@ class CPUMonitoringApp:
         max_retries = monitoring_config.get("max_retries", 3)
         retry_delay = monitoring_config.get("retry_delay", 5)
 
-        plot_style = "braille"  # Hardcoded to braille
+        display_config = self.config.get("display", {})
+        plot_style = display_config.get("plot_style", "braille")
 
         logger.info(f"  Creating components for {server_name}...")
 
         # Create components
+        # Handle password properly
+        password_value: str | None = None
+        if password is not None:
+            password_value = str(password) if not isinstance(password, str) else password
+
         srv_config = ServerConfig(
             name=server_config["name"],
             host=server_config["host"],
             username=server_config["username"],
             auth_method=server_config.get("auth_method", "key"),
             key_path=server_config.get("key_path"),
-            password=password,  # Use in-memory password
+            password=password_value,  # Use in-memory password
+            verify_host_key=server_config.get("verify_host_key", False),
         )
 
         ssh_client = SSHClient(
@@ -336,7 +424,8 @@ class CPUMonitoringApp:
 
         # Start monitoring
         logger.info(f"  Starting monitoring for {server_name}...")
-        asyncio.create_task(self._start_server_monitoring(ssh_client, monitor))
+        task = asyncio.create_task(self._start_server_monitoring(ssh_client, monitor))
+        self._cleanup_tasks.append(task)
 
         # Save config (without password)
         self.save_config()

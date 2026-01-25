@@ -1,7 +1,10 @@
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 from textual.widgets import Button
+
 from src.ui import AddServerScreen
+
 
 @pytest.mark.asyncio
 async def test_enter_on_cancel_button_action():
@@ -20,7 +23,7 @@ async def test_enter_on_cancel_button_action():
     screen.in_edit_mode = False
 
     # Mock query_one to return a button with proper ID
-    with patch.object(screen, 'query_one') as mock_query:
+    with patch.object(screen, "query_one") as mock_query:
         # Create mock button for cancel
         cancel_btn = Mock(spec=Button)
         cancel_btn.id = "cancel-btn"
