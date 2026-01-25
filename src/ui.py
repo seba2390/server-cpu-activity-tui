@@ -2,14 +2,9 @@
 
 import logging
 import time
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict
-
-
-try:
-    from typing import NotRequired  # Python 3.11+
-except ImportError:
-    from typing_extensions import NotRequired  # Python < 3.11
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -103,7 +98,7 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class AddServerScreen(ModalScreen["Optional[ServerConfigDict]"]):
+class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
     """Modal screen for adding a new server with arrow key navigation."""
 
     CSS = """
@@ -372,7 +367,7 @@ class AddServerScreen(ModalScreen["Optional[ServerConfigDict]"]):
 
         logger.info(f"Highlighted field {field['id']}, edit_mode={self.in_edit_mode}")
 
-    def _get_current_field(self) -> Optional[FieldDefinition]:
+    def _get_current_field(self) -> FieldDefinition | None:
         """Get the current field definition."""
         if 0 <= self.current_field_index < len(self.fields):
             return self.fields[self.current_field_index]
@@ -660,8 +655,8 @@ class AddServerScreen(ModalScreen["Optional[ServerConfigDict]"]):
             # Pass password in memory, but it won't be saved to config file
             server_config_dict["_password"] = password  # Temporary key for in-memory use
 
-        # Cast to ServerConfigDict
-        server_config = cast("ServerConfigDict", server_config_dict)
+        # Type is already validated above
+        server_config = server_config_dict  # type: ignore[assignment]
 
         logger.info(f"Server configuration validated successfully: {name}")
 
@@ -714,10 +709,10 @@ class MemoryWidget(Static):
     def __init__(self, **kwargs: Any) -> None:
         """Initialize memory widget."""
         super().__init__(**kwargs)
-        self.memory_info: Optional[MemoryInfo] = None
+        self.memory_info: MemoryInfo | None = None
         logger.info("MemoryWidget initialized")
 
-    def update_memory(self, memory_info: Optional[MemoryInfo]):
+    def update_memory(self, memory_info: MemoryInfo | None):
         """Update memory data.
 
         Args:
@@ -891,7 +886,7 @@ class HistoryPlotWidget(Static):
         lines.append(f"[dim]     ┌{left_border}[/dim][bold dodger_blue2]{title}[/bold dodger_blue2][dim]{right_border}┐[/dim]")
 
         # Plot rows with Y-axis
-        for _i, (label, row) in enumerate(zip(y_labels, plot_rows)):
+        for _i, (label, row) in enumerate(zip(y_labels, plot_rows, strict=True)):
             lines.append(f"[dim]{label} │[/dim]{row}[dim]│[/dim]")
 
         # Bottom border
@@ -935,17 +930,17 @@ class ServerWidget(Static):
         self.plot_style = plot_style
         self.poll_interval = poll_interval
 
-        self.metrics: Optional[ServerMetrics] = None
+        self.metrics: ServerMetrics | None = None
         self.core_widgets: list[CPUCoreWidget] = []
-        self.memory_widget: Optional[MemoryWidget] = None
-        self.history_widget: Optional[HistoryPlotWidget] = None
-        self.header_widget: Optional[Static] = None
-        self.cores_container: Optional[Container] = None
-        self.memory_container: Optional[Container] = None
-        self.history_container: Optional[Container] = None
+        self.memory_widget: MemoryWidget | None = None
+        self.history_widget: HistoryPlotWidget | None = None
+        self.header_widget: Static | None = None
+        self.cores_container: Container | None = None
+        self.memory_container: Container | None = None
+        self.history_container: Container | None = None
         self.is_selected = False
         self._spinner_index = 0
-        self._connection_start_time: Optional[float] = None
+        self._connection_start_time: float | None = None
         self._retry_count = 0
 
     def compose(self) -> ComposeResult:
@@ -1135,7 +1130,7 @@ class StatusBar(Static):
         total: int,
         connected: int,
         average_cpu: float,
-        last_update_time: Optional[float] = None
+        last_update_time: float | None = None
     ):
         """Update status bar statistics.
 
@@ -1150,7 +1145,7 @@ class StatusBar(Static):
         self.average_cpu = average_cpu
 
         if last_update_time:
-            dt = datetime.fromtimestamp(last_update_time, tz=timezone.utc)
+            dt = datetime.fromtimestamp(last_update_time, tz=UTC)
             self.last_update = dt.strftime("%H:%M:%S")
         else:
             self.last_update = "--:--:--"
@@ -1301,13 +1296,14 @@ class MonitoringApp(App[None]):
         Binding("r", "refresh", "Refresh", show=True),
         Binding("a", "add_server", "Add", show=True),
         Binding("d", "delete_server", "Delete", show=True),
+        Binding("p", "command_palette", "Palette", show=True),
     ]
 
     def __init__(
         self,
         server_widgets: list[ServerWidget],
-        on_delete_server: Optional[Callable[[str], None]] = None,
-        on_add_server: Optional[Callable[["ServerConfigDict"], None]] = None,
+        on_delete_server: Callable[[str], None] | None = None,
+        on_add_server: Callable[["ServerConfigDict"], None] | None = None,
         **kwargs
     ):
         """Initialize the monitoring app.
@@ -1320,11 +1316,11 @@ class MonitoringApp(App[None]):
         super().__init__(**kwargs)
         self.server_widgets = server_widgets
         self.selected_index = 0
-        self.main_container: Optional[VerticalScroll] = None
-        self.status_bar: Optional[StatusBar] = None
+        self.main_container: VerticalScroll | None = None
+        self.status_bar: StatusBar | None = None
         self._on_delete_server = on_delete_server
         self._on_add_server = on_add_server
-        self._last_metrics_update: Optional[float] = None
+        self._last_metrics_update: float | None = None
         logger.info(f"MonitoringApp initialized with {len(server_widgets)} server widgets")
 
     def compose(self) -> ComposeResult:
@@ -1333,8 +1329,7 @@ class MonitoringApp(App[None]):
 
         with VerticalScroll(id="main-container") as container:
             self.main_container = container
-            for widget in self.server_widgets:
-                yield widget
+            yield from self.server_widgets
 
         self.status_bar = StatusBar(id="status-bar")
         yield self.status_bar
@@ -1438,7 +1433,7 @@ class MonitoringApp(App[None]):
         logger.info("User action: add_server initiated, opening AddServerScreen")
         self.push_screen(AddServerScreen(), self._handle_add_server)
 
-    def _handle_add_server(self, server_config: "Optional[ServerConfigDict]") -> None:
+    def _handle_add_server(self, server_config: "ServerConfigDict | None") -> None:
         """Handle add server result."""
         if server_config:
             logger.info(f"Add server confirmed: {server_config['name']} ({server_config['host']})")

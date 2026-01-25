@@ -1,6 +1,5 @@
 """Tests for SSH client module."""
 
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -73,7 +72,7 @@ async def test_connect_key_not_found(ssh_client):
 async def test_connect_timeout(ssh_client):
     """Test connection timeout."""
     with (
-        patch("src.ssh_client.asyncssh.connect", side_effect=asyncio.TimeoutError()),
+        patch("src.ssh_client.asyncssh.connect", side_effect=TimeoutError()),
         patch.object(Path, "exists", return_value=True),
     ):
         result = await ssh_client.connect()

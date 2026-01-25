@@ -4,7 +4,6 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from .ssh_client import SSHClient
 
@@ -45,8 +44,8 @@ class ServerMetrics:
     cores: list[CPUCore]
     overall_usage: float
     connected: bool
-    memory: Optional[MemoryInfo] = None
-    error_message: Optional[str] = None
+    memory: MemoryInfo | None = None
+    error_message: str | None = None
 
     @property
     def core_count(self) -> int:
@@ -70,12 +69,12 @@ class CPUMonitor:
         self.history_window = history_window
 
         self._running = False
-        self._task: Optional[asyncio.Task] = None
-        self._latest_metrics: Optional[ServerMetrics] = None
+        self._task: asyncio.Task | None = None
+        self._latest_metrics: ServerMetrics | None = None
         self._lock = asyncio.Lock()
 
         # For CPU usage calculation
-        self._prev_stats: Optional[dict[int, dict[str, int]]] = None
+        self._prev_stats: dict[int, dict[str, int]] | None = None
 
         # CPU history: list of (timestamp, overall_usage) tuples
         self._cpu_history: list[tuple[float, float]] = []
@@ -110,7 +109,7 @@ class CPUMonitor:
 
         logger.info(f"{self.ssh_client.config.name}: CPU monitoring stopped")
 
-    async def get_metrics(self) -> Optional[ServerMetrics]:
+    async def get_metrics(self) -> ServerMetrics | None:
         """Get the latest CPU metrics.
 
         Returns:
@@ -392,7 +391,7 @@ class CPUMonitor:
         # Clamp to 0-100 range
         return max(0.0, min(100.0, usage))
 
-    def _parse_meminfo(self, output: str) -> Optional[MemoryInfo]:
+    def _parse_meminfo(self, output: str) -> MemoryInfo | None:
         """Parse /proc/meminfo output to extract memory statistics.
 
         Args:

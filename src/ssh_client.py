@@ -4,7 +4,6 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import asyncssh
 
@@ -20,8 +19,8 @@ class ServerConfig:
     host: str
     username: str
     auth_method: str = "key"  # "key" or "password"
-    key_path: Optional[str] = None
-    password: Optional[str] = None
+    key_path: str | None = None
+    password: str | None = None
     verify_host_key: bool = True  # Host key verification enabled by default for security
 
     def __post_init__(self):
@@ -40,8 +39,8 @@ class ConnectionStatus:
     """Status of an SSH connection."""
 
     connected: bool
-    error_message: Optional[str] = None
-    last_attempt: Optional[float] = None
+    error_message: str | None = None
+    last_attempt: float | None = None
 
 
 class SSHClient:
@@ -67,7 +66,7 @@ class SSHClient:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-        self._connection: Optional[asyncssh.SSHClientConnection] = None
+        self._connection: asyncssh.SSHClientConnection | None = None
         self._lock = asyncio.Lock()
         self.status = ConnectionStatus(connected=False)
 
@@ -136,7 +135,7 @@ class SSHClient:
                     self.status = ConnectionStatus(connected=True)
                     return True
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     error_msg = f"Connection timeout after {self.connection_timeout}s"
                     logger.warning(f"{self.config.name}: Attempt {attempt + 1}/{self.max_retries} - {error_msg}")
                     self.status = ConnectionStatus(connected=False, error_message=error_msg)
@@ -166,7 +165,7 @@ class SSHClient:
             else:
                 logger.info(f"{self.config.name}: Already disconnected, no action needed")
 
-    async def execute_command(self, command: str) -> Optional[str]:
+    async def execute_command(self, command: str) -> str | None:
         """Execute a command on the remote server.
 
         Args:

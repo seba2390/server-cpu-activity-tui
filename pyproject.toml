@@ -2,14 +2,14 @@
 name = "server-cpu-activity-tui"
 version = "0.1.0"
 description = "Terminal UI for monitoring CPU activity across multiple servers via SSH"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 
 [tool.ruff]
 # Set the maximum line length
 line-length = 120
 
-# Target Python 3.9+
-target-version = "py39"
+# Target Python 3.11+
+target-version = "py311"
 
 # Exclude common directories
 exclude = [
@@ -127,7 +127,7 @@ line-ending = "auto"
 
 [tool.pyright]
 # Python version and environment
-pythonVersion = "3.9"
+pythonVersion = "3.11"
 pythonPlatform = "All"
 
 # Include/exclude paths

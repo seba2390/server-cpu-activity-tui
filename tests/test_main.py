@@ -462,7 +462,7 @@ async def test_ui_update_loop(app):
     # Wait for loop to finish
     try:
         await asyncio.wait_for(loop_task, timeout=0.1)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         loop_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await loop_task
@@ -519,7 +519,7 @@ async def test_ui_update_loop_with_error(app):
     # Wait for loop to finish with errors
     try:
         await asyncio.wait_for(loop_task, timeout=1.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         loop_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await loop_task

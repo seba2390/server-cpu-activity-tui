@@ -6,13 +6,7 @@ import logging
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional, TypedDict
-
-
-try:
-    from typing import NotRequired  # Python 3.11+
-except ImportError:
-    from typing_extensions import NotRequired  # Python < 3.11
+from typing import NotRequired, TypedDict
 
 import yaml
 
@@ -87,8 +81,8 @@ class CPUMonitoringApp:
         self.ssh_clients: list[SSHClient] = []
         self.monitors: list[CPUMonitor] = []
         self.server_widgets: list[ServerWidget] = []
-        self.ui_app: Optional[MonitoringApp] = None
-        self._ui_update_task: Optional[asyncio.Task[None]] = None
+        self.ui_app: MonitoringApp | None = None
+        self._ui_update_task: asyncio.Task[None] | None = None
         self._cleanup_tasks: list[asyncio.Task] = []  # Track cleanup tasks
         self._running = False
         logger.info(f"CPUMonitoringApp initialized with config_path: {config_path}")
@@ -452,7 +446,7 @@ class CPUMonitoringApp:
         while self._running:
             try:
                 # Collect metrics from all monitors
-                for monitor, widget in zip(self.monitors, self.server_widgets):
+                for monitor, widget in zip(self.monitors, self.server_widgets, strict=True):
                     metrics = await monitor.get_metrics()
                     if metrics:
                         widget.update_metrics(metrics)
