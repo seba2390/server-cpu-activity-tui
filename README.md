@@ -19,7 +19,7 @@ A Python-based Terminal User Interface (TUI) for real-time monitoring of CPU cor
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.11 or higher
 - SSH access to target Linux servers
 - SSH key files (.pem) for key authentication OR passwords for password authentication
 

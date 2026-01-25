@@ -26,9 +26,9 @@ servers:
   # Server 4 - Example with password authentication
   # Password will be prompted at startup for security
   # Passwords are NEVER saved to this config file - only stored in memory during runtime
-  - name: "DGX Spark"
-    host: "dgx-spark-1.kvantify.com"
-    username: "sebastian_yde"
+  - name: "Example Password Server"
+    host: "server.example.com"
+    username: "your_username"
     auth_method: password  # Will prompt for password at startup
 
 # Monitoring Configuration

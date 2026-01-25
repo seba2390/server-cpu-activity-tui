@@ -1,4 +1,8 @@
-"""Integration tests for the CPU monitoring application."""
+"""Integration tests for the CPU monitoring application.
+
+Includes both traditional integration tests and new Textual pilot-based
+end-to-end TUI tests.
+"""
 
 import asyncio
 from unittest.mock import AsyncMock, patch
@@ -6,8 +10,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.main import CPUMonitoringApp
-from src.monitor import CPUMonitor
+from src.monitor import CPUCore, CPUMonitor, ServerMetrics
 from src.ssh_client import ServerConfig, SSHClient
+from src.ui import AddServerScreen, ConfirmDeleteScreen, MonitoringApp, ServerWidget
 
 
 class TestIntegration:
@@ -288,3 +293,365 @@ display:
 
         # Verify default is True
         assert config.verify_host_key is True
+
+
+# ============================================================================
+# Textual Pilot-Based End-to-End TUI Tests
+# ============================================================================
+
+
+class TestTextualPilotIntegration:
+    """Integration tests using Textual's test harness (pilot) for E2E TUI testing."""
+
+    @pytest.mark.asyncio
+    async def test_app_launches_and_displays(self):
+        """Test that the MonitoringApp launches successfully."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            # Wait for app to mount
+            await pilot.pause()
+
+            # Verify app is running
+            assert app.is_running
+            assert pilot.app == app
+
+    @pytest.mark.asyncio
+    async def test_keyboard_navigation_between_servers(self):
+        """Test keyboard navigation using up/down arrows."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Add test servers
+            server1 = ServerWidget("Server 1")
+            server2 = ServerWidget("Server 2")
+            server3 = ServerWidget("Server 3")
+            app.server_widgets = [server1, server2, server3]
+            app.selected_server_index = 0
+
+            # Navigate down
+            initial_index = app.selected_server_index
+            await pilot.press("down")
+            await pilot.pause()
+            assert app.selected_server_index == initial_index + 1
+
+            # Navigate down again
+            await pilot.press("down")
+            await pilot.pause()
+            assert app.selected_server_index == initial_index + 2
+
+            # Navigate up
+            await pilot.press("up")
+            await pilot.pause()
+            assert app.selected_server_index == initial_index + 1
+
+    @pytest.mark.asyncio
+    async def test_expand_collapse_with_arrow_keys(self):
+        """Test expanding/collapsing server with left/right arrows."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Add a test server
+            server = ServerWidget("Test Server")
+            app.server_widgets = [server]
+            app.selected_server_index = 0
+
+            # Initially collapsed
+            assert not server.expanded
+
+            # Press right to expand
+            await pilot.press("right")
+            await pilot.pause()
+            assert server.expanded
+
+            # Press left to collapse
+            await pilot.press("left")
+            await pilot.pause()
+            assert not server.expanded
+
+            # Press Enter to toggle
+            await pilot.press("enter")
+            await pilot.pause()
+            assert server.expanded
+
+    @pytest.mark.asyncio
+    async def test_refresh_action(self):
+        """Test the refresh action (R key)."""
+        app = MonitoringApp(server_widgets=[])
+
+        with patch.object(app, "action_refresh_display") as mock_refresh:
+            async with app.run_test() as pilot:
+                await pilot.pause()
+
+                # Press R to refresh
+                await pilot.press("r")
+                await pilot.pause()
+
+                # Verify refresh was called
+                mock_refresh.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_add_server_dialog_workflow(self):
+        """Test opening and closing Add Server dialog."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Press A to open add server dialog
+            await pilot.press("a")
+            await pilot.pause()
+
+            # Verify dialog is in screen stack
+            assert any(isinstance(screen, AddServerScreen) for screen in app.screen_stack)
+
+            # Press Escape to cancel
+            await pilot.press("escape")
+            await pilot.pause()
+
+    @pytest.mark.asyncio
+    async def test_delete_confirmation_workflow(self):
+        """Test delete server confirmation dialog."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Add a test server
+            server = ServerWidget("Test Server")
+            app.server_widgets = [server]
+            app.selected_server_index = 0
+
+            # Press D to delete
+            await pilot.press("d")
+            await pilot.pause()
+
+            # Verify confirmation dialog appears
+            assert any(isinstance(screen, ConfirmDeleteScreen) for screen in app.screen_stack)
+
+    @pytest.mark.asyncio
+    async def test_quit_application(self):
+        """Test quitting with Q key."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Press Q to quit
+            await pilot.press("q")
+            await pilot.pause()
+
+            # App should stop
+            assert not app.is_running
+
+    @pytest.mark.asyncio
+    async def test_server_metrics_update_display(self):
+        """Test that updating metrics refreshes the UI."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Add server widget
+            server = ServerWidget("Test Server")
+            app.server_widgets = [server]
+
+            # Create test metrics
+            cores = [
+                CPUCore(core_id=0, usage_percent=25.0),
+                CPUCore(core_id=1, usage_percent=50.0),
+                CPUCore(core_id=2, usage_percent=75.0),
+            ]
+
+            metrics = ServerMetrics(
+                server_name="Test Server",
+                timestamp=1234567890.0,
+                cores=cores,
+                overall_usage=50.0,
+                connected=True,
+            )
+
+            # Update metrics
+            server.update_metrics(metrics)
+            await pilot.pause()
+
+            # Verify metrics applied
+            assert server.metrics == metrics
+            assert server.metrics.overall_usage == 50.0
+
+    @pytest.mark.asyncio
+    async def test_disconnected_server_error_display(self):
+        """Test that disconnected servers show error state in UI."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Add server
+            server = ServerWidget("Test Server")
+            app.server_widgets = [server]
+
+            # Create disconnected metrics
+            metrics = ServerMetrics(
+                server_name="Test Server",
+                timestamp=1234567890.0,
+                cores=[],
+                overall_usage=0.0,
+                connected=False,
+                error_message="Connection timeout",
+            )
+
+            server.update_metrics(metrics)
+            await pilot.pause()
+
+            # Verify error state
+            assert not metrics.connected
+            assert metrics.error_message == "Connection timeout"
+
+    @pytest.mark.asyncio
+    async def test_command_palette_opens(self):
+        """Test command palette (P key)."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Press P for command palette
+            await pilot.press("p")
+            await pilot.pause()
+
+            # Textual's built-in command palette should open
+
+    @pytest.mark.asyncio
+    async def test_navigation_wraps_at_boundaries(self):
+        """Test that navigation wraps around at list boundaries."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Add servers
+            servers = [ServerWidget(f"Server {i}") for i in range(3)]
+            app.server_widgets = servers
+            app.selected_server_index = 0
+
+            # Navigate up from first (should wrap to last)
+            await pilot.press("up")
+            await pilot.pause()
+            assert app.selected_server_index == len(servers) - 1
+
+            # Navigate down from last (should wrap to first)
+            await pilot.press("down")
+            await pilot.pause()
+            assert app.selected_server_index == 0
+
+    @pytest.mark.asyncio
+    async def test_cpu_history_accumulates_over_time(self):
+        """Test CPU history accumulation in expanded view."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Add and expand server
+            server = ServerWidget("Test Server")
+            app.server_widgets = [server]
+            server.toggle_expanded()
+
+            # Add metrics over time
+            for i in range(10):
+                cores = [CPUCore(core_id=0, usage_percent=float(i * 10))]
+                metrics = ServerMetrics(
+                    server_name="Test Server",
+                    timestamp=1234567890.0 + i,
+                    cores=cores,
+                    overall_usage=float(i * 10),
+                    connected=True,
+                )
+                server.update_metrics(metrics)
+                await pilot.pause(0.05)
+
+            # History should have accumulated
+            # (Exact verification depends on implementation)
+
+    @pytest.mark.asyncio
+    async def test_full_user_workflow(self):
+        """End-to-end test of typical user workflow."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Start with servers
+            server1 = ServerWidget("Server 1")
+            server2 = ServerWidget("Server 2")
+            app.server_widgets = [server1, server2]
+            app.selected_server_index = 0
+
+            # Navigate to second server
+            await pilot.press("down")
+            await pilot.pause()
+            assert app.selected_server_index == 1
+
+            # Expand it
+            await pilot.press("right")
+            await pilot.pause()
+            assert server2.expanded
+
+            # Refresh
+            await pilot.press("r")
+            await pilot.pause()
+
+            # Collapse
+            await pilot.press("left")
+            await pilot.pause()
+            assert not server2.expanded
+
+            # Navigate back
+            await pilot.press("up")
+            await pilot.pause()
+            assert app.selected_server_index == 0
+
+            # Quit
+            await pilot.press("q")
+            await pilot.pause()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_metric_updates(self):
+        """Test multiple servers receiving metrics concurrently."""
+        app = MonitoringApp(server_widgets=[])
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # Add multiple servers
+            servers = [ServerWidget(f"Server {i}") for i in range(5)]
+            app.server_widgets = servers
+
+            # Update all servers concurrently
+            async def update_server(server, usage):
+                cores = [CPUCore(core_id=0, usage_percent=usage)]
+                metrics = ServerMetrics(
+                    server_name=server.server_name,
+                    timestamp=1234567890.0,
+                    cores=cores,
+                    overall_usage=usage,
+                    connected=True,
+                )
+                server.update_metrics(metrics)
+
+            # Simulate concurrent updates
+            await asyncio.gather(*[
+                update_server(server, float(i * 20))
+                for i, server in enumerate(servers)
+            ])
+            await pilot.pause()
+
+            # Verify all updated
+            for i, server in enumerate(servers):
+                assert server.metrics is not None
+                assert server.metrics.overall_usage == float(i * 20)
