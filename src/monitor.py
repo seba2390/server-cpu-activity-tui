@@ -5,6 +5,8 @@ import logging
 import time
 from dataclasses import dataclass
 
+import asyncssh
+
 from .ssh_client import SSHClient
 
 
@@ -194,7 +196,7 @@ class CPUMonitor:
             except asyncio.CancelledError:
                 logger.info(f"{self.ssh_client.config.name}: Monitor loop cancelled")
                 break
-            except Exception as e:
+            except (asyncssh.Error, OSError, ValueError) as e:
                 consecutive_failures += 1
                 logger.error(
                     f"{self.ssh_client.config.name}: Error in monitoring loop (loop {loop_count}, consecutive failures: {consecutive_failures}/{max_consecutive_failures}): {e}", exc_info=True
@@ -293,7 +295,7 @@ class CPUMonitor:
                 memory=memory_info,
             )
 
-        except Exception as e:
+        except (asyncssh.Error, OSError, ValueError, KeyError) as e:
             logger.error(
                 f"{self.ssh_client.config.name}: Error collecting CPU metrics: {e}", exc_info=True
             )

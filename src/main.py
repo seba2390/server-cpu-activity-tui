@@ -8,6 +8,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
+import asyncssh
 import yaml
 
 from .monitor import CPUMonitor
@@ -83,7 +84,7 @@ class CPUMonitoringApp:
         self.server_widgets: list[ServerWidget] = []
         self.ui_app: MonitoringApp | None = None
         self._ui_update_task: asyncio.Task[None] | None = None
-        self._cleanup_tasks: list[asyncio.Task] = []  # Track cleanup tasks
+        self._cleanup_tasks: list[asyncio.Task[None]] = []  # Track cleanup tasks
         self._running = False
         logger.info(f"CPUMonitoringApp initialized with config_path: {config_path}")
 
@@ -120,8 +121,8 @@ class CPUMonitoringApp:
         except yaml.YAMLError as e:
             logger.error(f"Error parsing configuration file: {e}")
             sys.exit(1)
-        except Exception as e:
-            logger.error(f"Error loading configuration: {e}")
+        except OSError as e:
+            logger.error(f"Error loading configuration file: {e}")
             sys.exit(1)
 
     def initialize_components(self):
@@ -224,8 +225,8 @@ class CPUMonitoringApp:
             except KeyError as e:
                 logger.error(f"Server configuration missing required field: {e}")
                 sys.exit(1)
-            except Exception as e:
-                logger.error(f"Error initializing server components: {e}")
+            except (ValueError, TypeError) as e:
+                logger.error(f"Invalid server configuration value: {e}")
                 sys.exit(1)
 
         logger.info(f"Component initialization complete: {len(self.ssh_clients)} servers configured")
@@ -285,7 +286,7 @@ class CPUMonitoringApp:
                 yaml.dump(self.config, f, default_flow_style=False, sort_keys=False)
             logger.info(f"Configuration saved successfully to {self.config_path}")
             logger.info(f"  Current server count: {len(self.config.get('servers', []))}")
-        except Exception as e:
+        except (OSError, yaml.YAMLError) as e:
             logger.error(f"Error saving configuration: {e}")
 
     def delete_server(self, server_name: str):
@@ -339,7 +340,7 @@ class CPUMonitoringApp:
             await ssh_client.disconnect()
             logger.info(f"  SSH client disconnected for: {server_name}")
             logger.info(f"Resource cleanup complete for: {server_name}")
-        except Exception as e:
+        except (asyncio.CancelledError, asyncssh.Error, OSError) as e:
             logger.error(f"Error during cleanup for {server_name}: {e}", exc_info=True)
 
     def add_server(self, server_config: ServerConfigDict):
@@ -374,10 +375,10 @@ class CPUMonitoringApp:
         logger.info(f"  Creating components for {server_name}...")
 
         # Create components
-        # Handle password properly
+        # Handle password properly - convert to string if provided
         password_value: str | None = None
         if password is not None:
-            password_value = str(password) if not isinstance(password, str) else password
+            password_value = password if isinstance(password, str) else str(password)
 
         srv_config = ServerConfig(
             name=server_config["name"],
@@ -472,7 +473,7 @@ class CPUMonitoringApp:
             except asyncio.CancelledError:
                 logger.info("UI update loop cancelled")
                 break
-            except Exception as e:
+            except (RuntimeError, AttributeError) as e:
                 logger.error(f"Error in UI update loop: {e}", exc_info=True)
 
     async def run_async(self):
@@ -506,7 +507,7 @@ class CPUMonitoringApp:
 
         except KeyboardInterrupt:
             logger.info("Received keyboard interrupt")
-        except Exception as e:
+        except (RuntimeError, ValueError) as e:
             logger.error(f"Application error: {e}", exc_info=True)
         finally:
             self._running = False

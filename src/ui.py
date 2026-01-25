@@ -15,6 +15,7 @@ from textual.widgets import Button, Footer, Header, Input, Label, OptionList, St
 from textual.widgets.option_list import Option
 
 from .monitor import CPUCore, MemoryInfo, ServerMetrics
+from .validation import validate_hostname, validate_server_name, validate_username
 
 
 if TYPE_CHECKING:
@@ -612,15 +613,39 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
             self.query_one("#input-name", Input).focus()
             return
 
+        # Validate server name
+        name_validation = validate_server_name(name)
+        if not name_validation.valid:
+            logger.warning(f"Add server form submission failed: {name_validation.error_message}")
+            self.notify(name_validation.error_message or "Invalid server name", severity="error")
+            self.query_one("#input-name", Input).focus()
+            return
+
         if not host:
             logger.warning("Add server form submission failed: missing host")
             self.notify("Host (IP or hostname) is required", severity="error")
             self.query_one("#input-host", Input).focus()
             return
 
+        # Validate hostname/IP
+        host_validation = validate_hostname(host)
+        if not host_validation.valid:
+            logger.warning(f"Add server form submission failed: {host_validation.error_message}")
+            self.notify(host_validation.error_message or "Invalid host", severity="error")
+            self.query_one("#input-host", Input).focus()
+            return
+
         if not username:
             logger.warning("Add server form submission failed: missing username")
             self.notify("Username is required", severity="error")
+            self.query_one("#input-username", Input).focus()
+            return
+
+        # Validate username
+        username_validation = validate_username(username)
+        if not username_validation.valid:
+            logger.warning(f"Add server form submission failed: {username_validation.error_message}")
+            self.notify(username_validation.error_message or "Invalid username", severity="error")
             self.query_one("#input-username", Input).focus()
             return
 

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -111,14 +112,40 @@ class SSHClient:
                     logger.error(f"{self.config.name}: {error_msg}")
                     self.status = ConnectionStatus(connected=False, error_message=error_msg)
                     return False
+
                 key_path = Path(self.config.key_path).expanduser()
+
+                # Validate key file exists
                 if not key_path.exists():
                     error_msg = f"SSH key not found: {key_path}"
                     logger.error(f"{self.config.name}: {error_msg}")
                     self.status = ConnectionStatus(connected=False, error_message=error_msg)
                     return False
+
+                # Validate key file permissions (should be 600 or 400 for security)
+                try:
+                    key_stat = key_path.stat()
+                    key_perms = stat.filemode(key_stat.st_mode)
+                    octal_perms = oct(key_stat.st_mode)[-3:]
+
+                    # Check if permissions are too open (not 600, 400, or stricter)
+                    if key_stat.st_mode & (stat.S_IRWXG | stat.S_IRWXO):  # Group or others have any permissions
+                        error_msg = (
+                            f"SSH key has insecure permissions: {key_perms} ({octal_perms}). "
+                            f"Key file should be readable only by owner (chmod 600 {key_path})"
+                        )
+                        logger.error(f"{self.config.name}: {error_msg}")
+                        self.status = ConnectionStatus(connected=False, error_message=error_msg)
+                        return False
+
+                    logger.info(f"{self.config.name}: SSH key verified at: {key_path} (permissions: {octal_perms})")
+                except OSError as e:
+                    error_msg = f"Failed to check SSH key permissions: {e}"
+                    logger.error(f"{self.config.name}: {error_msg}")
+                    self.status = ConnectionStatus(connected=False, error_message=error_msg)
+                    return False
+
                 connect_kwargs["client_keys"] = [str(key_path)]
-                logger.info(f"{self.config.name}: SSH key verified at: {key_path}")
 
             for attempt in range(self.max_retries):
                 try:
