@@ -1,11 +1,20 @@
 """Tests for SSH client module."""
 
+import stat
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
 from src.ssh_client import ConnectionStatus, ServerConfig, SSHClient
+
+
+def create_mock_stat(mode: int = 0o600):
+    """Create a mock stat result with specific mode."""
+    mock_stat = MagicMock()
+    # Create a mode that passes permission checks (no group/others access)
+    mock_stat.st_mode = stat.S_IFREG | mode
+    return mock_stat
 
 
 @pytest.fixture
@@ -46,9 +55,18 @@ async def test_connect_success(ssh_client):
     async def mock_connect(*args, **kwargs):
         return mock_connection
 
+    # Create a mock Path that handles the chaining: Path(...).expanduser()
+    mock_path_instance = MagicMock()
+    mock_path_instance.exists.return_value = True
+    mock_path_instance.stat.return_value = create_mock_stat(0o600)
+    mock_path_instance.__str__ = lambda self: "/tmp/test_key.pem"
+    # The Path(...) constructor returns something, then .expanduser() is called on it
+    # Both should return the same mock path instance
+    mock_path_instance.expanduser.return_value = mock_path_instance
+
     with (
         patch("src.ssh_client.asyncssh.connect", new=mock_connect),
-        patch.object(Path, "exists", return_value=True),
+        patch("src.ssh_client.Path", return_value=mock_path_instance),
     ):
         result = await ssh_client.connect()
 
@@ -71,9 +89,16 @@ async def test_connect_key_not_found(ssh_client):
 @pytest.mark.asyncio
 async def test_connect_timeout(ssh_client):
     """Test connection timeout."""
+    # Create a mock Path that handles the chaining: Path(...).expanduser()
+    mock_path_instance = MagicMock()
+    mock_path_instance.exists.return_value = True
+    mock_path_instance.stat.return_value = create_mock_stat(0o600)
+    mock_path_instance.__str__ = lambda self: "/tmp/test_key.pem"
+    mock_path_instance.expanduser.return_value = mock_path_instance
+
     with (
         patch("src.ssh_client.asyncssh.connect", side_effect=TimeoutError()),
-        patch.object(Path, "exists", return_value=True),
+        patch("src.ssh_client.Path", return_value=mock_path_instance),
     ):
         result = await ssh_client.connect()
 
@@ -166,9 +191,16 @@ async def test_ensure_connected_reconnect(ssh_client):
     async def mock_connect(*args, **kwargs):
         return mock_connection
 
+    # Create a mock Path that returns True for exists() and proper stat()
+    mock_path_instance = MagicMock()
+    mock_path_instance.exists.return_value = True
+    mock_path_instance.stat.return_value = create_mock_stat(0o600)
+    mock_path_instance.__str__ = lambda self: "/tmp/test_key.pem"
+    mock_path_instance.expanduser.return_value = mock_path_instance
+
     with (
         patch("src.ssh_client.asyncssh.connect", new=mock_connect),
-        patch.object(Path, "exists", return_value=True),
+        patch("src.ssh_client.Path", return_value=mock_path_instance),
     ):
         result = await ssh_client.ensure_connected()
 
@@ -179,7 +211,14 @@ async def test_ensure_connected_reconnect(ssh_client):
 @pytest.mark.asyncio
 async def test_connect_retry_logic(ssh_client):
     """Test connection retry logic on failures."""
-    with patch.object(Path, "exists", return_value=True):
+    # Create a mock Path that handles the chaining: Path(...).expanduser()
+    mock_path_instance = MagicMock()
+    mock_path_instance.exists.return_value = True
+    mock_path_instance.stat.return_value = create_mock_stat(0o600)
+    mock_path_instance.__str__ = lambda self: "/tmp/test_key.pem"
+    mock_path_instance.expanduser.return_value = mock_path_instance
+
+    with patch("src.ssh_client.Path", return_value=mock_path_instance):
         # Simulate 2 failures then success
         mock_conn = AsyncMock()
         mock_conn.is_closed = Mock(return_value=False)
@@ -203,8 +242,15 @@ async def test_connect_retry_logic(ssh_client):
 @pytest.mark.asyncio
 async def test_connect_exhausted_retries(ssh_client):
     """Test connection when all retries are exhausted."""
+    # Create a mock Path that handles the chaining: Path(...).expanduser()
+    mock_path_instance = MagicMock()
+    mock_path_instance.exists.return_value = True
+    mock_path_instance.stat.return_value = create_mock_stat(0o600)
+    mock_path_instance.__str__ = lambda self: "/tmp/test_key.pem"
+    mock_path_instance.expanduser.return_value = mock_path_instance
+
     with (
-        patch.object(Path, "exists", return_value=True),
+        patch("src.ssh_client.Path", return_value=mock_path_instance),
         patch("src.ssh_client.asyncssh.connect", side_effect=OSError("Connection refused")),
     ):
         result = await ssh_client.connect()

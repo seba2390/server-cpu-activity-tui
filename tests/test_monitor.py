@@ -380,13 +380,27 @@ async def test_monitor_loop_exception_handling(cpu_monitor, ssh_client):
     """Test monitor loop continues after exceptions."""
     ssh_client.ensure_connected = AsyncMock(return_value=True)
 
-    # First call raises exception, second succeeds
+    # First call raises exception, subsequent calls succeed
+    # Use OSError which is caught by the monitor loop's exception handler
     proc_stat_output = """cpu  1000 200 300 5000 100 0 50 0 0 0
 cpu0 250 50 75 1250 25 0 12 0 0 0
 """
+    meminfo_output = """MemTotal:       16384000 kB
+MemFree:         8192000 kB
+MemAvailable:   10240000 kB
+"""
 
+    # Provide enough responses: 1st call errors, then loop needs proc/stat + meminfo pairs
     ssh_client.execute_command = AsyncMock(
-        side_effect=[Exception("Test error"), proc_stat_output]
+        side_effect=[
+            OSError("Test error"),  # First iteration fails
+            proc_stat_output,  # Second iteration: /proc/stat
+            meminfo_output,  # Second iteration: /proc/meminfo
+            proc_stat_output,  # More iterations if needed...
+            meminfo_output,
+            proc_stat_output,
+            meminfo_output,
+        ]
     )
 
     await cpu_monitor.start()

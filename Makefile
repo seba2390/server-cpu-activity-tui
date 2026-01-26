@@ -15,7 +15,7 @@ help:
 
 # Python and virtual environment settings
 PYTHON := python3
-VENV := venv
+VENV := .venv
 VENV_BIN := $(VENV)/bin
 PYTHON_VENV := $(VENV_BIN)/python
 PIP := $(VENV_BIN)/pip

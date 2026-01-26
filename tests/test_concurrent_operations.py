@@ -23,16 +23,13 @@ class TestConcurrentOperations:
         )
 
         client = SSHClient(config, connection_timeout=1, max_retries=1, retry_delay=0)
-        monitor = CPUMonitor(client, poll_interval=0.1, max_history_seconds=10)
+        monitor = CPUMonitor(client, poll_interval=0.1, history_window=10)
 
-        # Try to collect metrics concurrently (should be protected by internal logic)
-        tasks = [monitor.collect_metrics() for _ in range(10)]
+        # Try to get metrics concurrently (should be protected by internal logic)
+        tasks = [monitor.get_metrics() for _ in range(10)]
         metrics_list = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # All should return metrics (even if not connected)
-        assert all(m is not None for m in metrics_list if not isinstance(m, Exception))
-
-        # None should raise exceptions
+        # All should return None (no metrics yet) or metrics, but no exceptions
         assert not any(isinstance(m, Exception) for m in metrics_list)
 
     async def test_start_stop_concurrent_calls(self):
@@ -46,7 +43,7 @@ class TestConcurrentOperations:
         )
 
         client = SSHClient(config, connection_timeout=1, max_retries=1, retry_delay=0)
-        monitor = CPUMonitor(client, poll_interval=0.5, max_history_seconds=10)
+        monitor = CPUMonitor(client, poll_interval=0.5, history_window=10)
 
         # Start multiple times concurrently
         start_tasks = [asyncio.create_task(monitor.start()) for _ in range(3)]
@@ -70,14 +67,14 @@ class TestConcurrentOperations:
         )
 
         client = SSHClient(config, connection_timeout=1, max_retries=1, retry_delay=0)
-        monitor = CPUMonitor(client, poll_interval=0.1, max_history_seconds=10)
+        monitor = CPUMonitor(client, poll_interval=0.1, history_window=10)
 
         # Start monitoring task
         monitor_task = asyncio.create_task(monitor.start())
 
         # Repeatedly access history while monitoring is running
         for _ in range(20):
-            history = monitor.get_cpu_history()
+            history = await monitor.get_cpu_history()
             assert isinstance(history, list)
             await asyncio.sleep(0.05)
 
@@ -98,8 +95,8 @@ class TestConcurrentOperations:
         client = SSHClient(config, connection_timeout=1, max_retries=1, retry_delay=0)
 
         # Create multiple monitors (though unusual, should be handled)
-        monitor1 = CPUMonitor(client, poll_interval=0.2, max_history_seconds=10)
-        monitor2 = CPUMonitor(client, poll_interval=0.3, max_history_seconds=10)
+        monitor1 = CPUMonitor(client, poll_interval=0.2, history_window=10)
+        monitor2 = CPUMonitor(client, poll_interval=0.3, history_window=10)
 
         # Start both
         task1 = asyncio.create_task(monitor1.start())
@@ -169,10 +166,10 @@ class TestConcurrentOperations:
         )
 
         client = SSHClient(config, connection_timeout=1, max_retries=1, retry_delay=0)
-        monitor = CPUMonitor(client, poll_interval=0.5, max_history_seconds=10)
+        monitor = CPUMonitor(client, poll_interval=0.5, history_window=10)
 
         # Request metrics rapidly
-        tasks = [monitor.collect_metrics() for _ in range(50)]
+        tasks = [monitor.get_metrics() for _ in range(50)]
         metrics_list = await asyncio.gather(*tasks, return_exceptions=True)
 
         # All should complete successfully
@@ -190,7 +187,7 @@ class TestConcurrentOperations:
         )
 
         client = SSHClient(config, connection_timeout=1, max_retries=1, retry_delay=0)
-        monitor = CPUMonitor(client, poll_interval=0.2, max_history_seconds=10)
+        monitor = CPUMonitor(client, poll_interval=0.2, history_window=10)
 
         # Start monitoring
         monitor_task = asyncio.create_task(monitor.start())

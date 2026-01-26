@@ -505,7 +505,8 @@ async def test_ui_update_loop_with_error(app):
         error_count += 1
         if error_count > 3:  # After 3 errors, stop the loop
             app._running = False
-        raise Exception("Test error")
+            return None  # Return None instead of raising to let loop continue
+        raise RuntimeError("Test error")  # Use RuntimeError which is caught
 
     # Make get_metrics raise an error
     for monitor in app.monitors:
@@ -516,7 +517,7 @@ async def test_ui_update_loop_with_error(app):
     # Run loop
     loop_task = asyncio.create_task(app.ui_update_loop())
 
-    # Wait for loop to finish with errors
+    # Wait for loop to finish
     try:
         await asyncio.wait_for(loop_task, timeout=1.0)
     except TimeoutError:
@@ -563,9 +564,9 @@ async def test_run_async_handles_exception(app):
     app.stop_monitoring = AsyncMock()
     app.ui_update_loop = AsyncMock()
 
-    # Mock UI app to raise an error
+    # Mock UI app to raise an error - use RuntimeError which is caught by run_async
     mock_ui_app = MagicMock()
-    mock_ui_app.run_async = AsyncMock(side_effect=Exception("Test error"))
+    mock_ui_app.run_async = AsyncMock(side_effect=RuntimeError("Test error"))
 
     with patch("src.main.MonitoringApp", return_value=mock_ui_app):
         await app.run_async()
