@@ -139,3 +139,5 @@ cpu_monitor.log
 
 # Keep sample config
 !config.sample.yaml
+
+textual_docs/

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
@@ -1038,9 +1038,7 @@ class ServerWidget(Static):
         self.memory_widget: MemoryWidget | None = None
         self.history_widget: HistoryPlotWidget | None = None
         self.header_widget: Static | None = None
-        self.cores_container: Container | None = None
-        self.memory_container: Container | None = None
-        self.history_container: Container | None = None
+        self.content_layout: Horizontal | None = None  # Main content container
         self.is_selected = False
         self._spinner_index = 0
         self._connection_start_time: float | None = None
@@ -1051,36 +1049,36 @@ class ServerWidget(Static):
 
     def compose(self) -> ComposeResult:
         """Compose the server widget layout."""
-        with Vertical():
-            # Sanitize server name for use in widget IDs (replace spaces with hyphens)
-            safe_id = self.server_name.replace(" ", "-")
-            self.header_widget = Static("", id=f"header-{safe_id}", classes="server-header")
-            yield self.header_widget
+        # Sanitize server name for use in widget IDs (replace spaces with hyphens)
+        safe_id = self.server_name.replace(" ", "-")
 
-            # Two-column layout: CPU cores on left, memory+history on right
-            with Horizontal(id=f"content-{safe_id}", classes="content-layout"):
-                # Left column: CPU Cores Section
-                with Container(id=f"cores-{safe_id}", classes="section-container left-column") as self.cores_container:
-                    yield Static("CPU CORES", classes="section-header")
-                    yield Container(id=f"cores-content-{safe_id}", classes="section-content")
+        self.header_widget = Static("", id=f"header-{safe_id}", classes="server-header")
+        yield self.header_widget
 
-                # Right column: Memory and History stacked vertically
-                with Vertical(classes="right-column"):
-                    # Memory Section with header
-                    with Container(id=f"memory-{safe_id}", classes="section-container") as self.memory_container:
-                        yield Static("MEMORY", classes="section-header")
-                        self.memory_widget = MemoryWidget()
-                        yield self.memory_widget
+        # Two-column layout using Horizontal with Vertical columns (following Textual patterns)
+        with Horizontal(id=f"content-{safe_id}", classes="content-layout") as self.content_layout:
+            # Left column: CPU Cores Section
+            with Vertical(id=f"cores-{safe_id}", classes="left-column"):
+                yield Static("CPU CORES", classes="section-header")
+                yield Vertical(id=f"cores-content-{safe_id}", classes="section-content")
 
-                    # History Section with header
-                    with Container(id=f"history-{safe_id}", classes="section-container") as self.history_container:
-                        yield Static("CPU HISTORY", classes="section-header")
-                        self.history_widget = HistoryPlotWidget(
-                            self.history_window,
-                            self.plot_style,
-                            self.poll_interval
-                        )
-                        yield self.history_widget
+            # Right column: Memory and History stacked vertically
+            with Vertical(classes="right-column"):
+                # Memory Section with header
+                with Vertical(id=f"memory-{safe_id}", classes="section-container"):
+                    yield Static("MEMORY", classes="section-header")
+                    self.memory_widget = MemoryWidget()
+                    yield self.memory_widget
+
+                # History Section with header
+                with Vertical(id=f"history-{safe_id}", classes="section-container"):
+                    yield Static("CPU HISTORY", classes="section-header")
+                    self.history_widget = HistoryPlotWidget(
+                        self.history_window,
+                        self.plot_style,
+                        self.poll_interval
+                    )
+                    yield self.history_widget
 
     def on_mount(self):
         """Handle widget mount event."""
@@ -1168,13 +1166,9 @@ class ServerWidget(Static):
         Args:
             expanded: The new expanded state
         """
-        # Show/hide all content sections based on expanded state
-        if self.cores_container:
-            self.cores_container.display = expanded
-        if self.memory_container:
-            self.memory_container.display = expanded
-        if self.history_container:
-            self.history_container.display = expanded
+        # Show/hide the entire content layout based on expanded state
+        if self.content_layout:
+            self.content_layout.display = expanded
         # Update header to reflect new state
         self._update_header()
 
@@ -1246,12 +1240,8 @@ class ServerWidget(Static):
         self._update_header()
         # Container visibility is handled by watch_expanded, but we update here
         # as well for cases where refresh_display is called externally
-        if self.cores_container:
-            self.cores_container.display = self.expanded
-        if self.memory_container:
-            self.memory_container.display = self.expanded
-        if self.history_container:
-            self.history_container.display = self.expanded
+        if self.content_layout:
+            self.content_layout.display = self.expanded
 
 
 class StatusBar(Static):
@@ -1354,16 +1344,6 @@ class MonitoringApp(App[None]):
         border: round $accent;
     }
 
-    ServerWidget > Vertical {
-        height: auto;
-        padding: 0;
-        margin: 0;
-    }
-
-    ServerWidget Vertical {
-        height: auto;
-    }
-
     .server-header {
         padding: 0 1;
         height: auto;
@@ -1387,41 +1367,39 @@ class MonitoringApp(App[None]):
         text-align: center;
     }
 
+    /* Two-column layout container */
     .content-layout {
-        height: auto;
         width: 100%;
+        height: auto;
         padding: 0 1 1 1;
-        layout: grid;
-        grid-size: 2;
-        grid-columns: auto 1fr;
-        grid-gutter: 1;
     }
 
+    /* Left column: fixed width for CPU cores */
     .left-column {
+        width: 37;
         height: auto;
+        border: round $primary-darken-1;
+        background: $surface;
     }
 
+    /* Right column: flexible width for memory and history */
     .right-column {
+        width: 1fr;
         height: auto;
+        margin-left: 1;
     }
 
+    /* Section containers inside right column */
     .section-container {
         height: auto;
         padding: 0;
         border: round $primary-darken-1;
         background: $surface;
+        margin-bottom: 1;
     }
 
-    .section-container.left-column {
-        border: round $primary-darken-1;
-    }
-
-    .right-column .section-container {
-        margin-top: 1;
-    }
-
-    .right-column .section-container:first-of-type {
-        margin-top: 0;
+    .section-container:last-of-type {
+        margin-bottom: 0;
     }
 
     .section-header {
