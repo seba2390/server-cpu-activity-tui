@@ -797,7 +797,7 @@ def test_memory_widget_render_low_usage():
 
     rendered = widget.render()
 
-    assert "Memory:" in rendered
+    # Memory label is now in section header, not in widget render
     assert "25.0%" in rendered
     assert "[dodger_blue2]" in rendered  # Should be blue
 
@@ -878,9 +878,9 @@ def test_history_plot_widget_render_with_data():
 
     rendered = widget.render()
 
-    # Should show the plot title and window width label
-    assert "AVG CPU UTILIZATION" in rendered
-    assert "window width:" in rendered
+    # Title is now in section header, plot shows time labels instead
+    assert "-60s" in rendered  # Time range indicator
+    assert "now" in rendered  # Current time indicator
     # Should have braille plot characters (check for blue color which is used in braille plots)
     assert "[dodger_blue2]" in rendered
 
@@ -960,6 +960,7 @@ def test_history_plot_widget_render_braille():
     widget_braille = HistoryPlotWidget(history_window=60, poll_interval=2.0)
     widget_braille.update_history(history_data)
     rendered_braille = widget_braille.render()
-    assert "AVG CPU UTILIZATION" in rendered_braille
-    assert "BRAILLE" not in rendered_braille  # No longer shows style in title
+    # Title is now in section header, plot shows time labels instead
+    assert "-60s" in rendered_braille  # Time range indicator
+    assert "now" in rendered_braille  # Current time indicator
     assert isinstance(rendered_braille, str)

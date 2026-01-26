@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Input, Label, OptionList, Static
@@ -22,6 +23,30 @@ if TYPE_CHECKING:
     from .main import ServerConfigDict
 
 logger = logging.getLogger(__name__)
+
+
+class ServerDeleted(Message):
+    """Message posted when a server is deleted from the UI.
+
+    Attributes:
+        server_name: The name of the deleted server.
+    """
+
+    def __init__(self, server_name: str) -> None:
+        self.server_name = server_name
+        super().__init__()
+
+
+class ServerAdded(Message):
+    """Message posted when a new server is added via the UI.
+
+    Attributes:
+        server_config: The configuration dictionary for the new server.
+    """
+
+    def __init__(self, server_config: "ServerConfigDict") -> None:
+        self.server_config = server_config
+        super().__init__()
 
 
 class FieldDefinition(TypedDict):
@@ -201,6 +226,28 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
         Binding("left", "navigate_left", "Left", show=False),
     ]
 
+    # Class-level constant for label texts
+    LABEL_TEXTS: dict[str, str] = {
+        "label-name": "Server Name:",
+        "label-host": "Host (IP or Hostname):",
+        "label-username": "Username:",
+        "label-authmethod": "Authentication Method:",
+        "label-keypath": "SSH Key Path:",
+        "label-password": "Password:",
+    }
+
+    # Class-level constant for field definitions
+    FIELD_DEFINITIONS: list[FieldDefinition] = [
+        {"id": "input-name", "label_id": "label-name", "type": "input"},
+        {"id": "input-host", "label_id": "label-host", "type": "input"},
+        {"id": "input-username", "label_id": "label-username", "type": "input"},
+        {"id": "auth-method-list", "label_id": "label-authmethod", "type": "optionlist"},
+        {"id": "input-keypath", "label_id": "label-keypath", "type": "input", "auth_type": "key"},
+        {"id": "input-password", "label_id": "label-password", "type": "input", "auth_type": "password"},
+        {"id": "add-btn", "label_id": None, "type": "button"},
+        {"id": "cancel-btn", "label_id": None, "type": "button"},
+    ]
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.auth_method = "key"  # Default authentication method
@@ -269,21 +316,35 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
         """Set up initial state when screen is mounted."""
         logger.info("AddServerScreen mounted, setting up initial state")
 
-        # Define fields in order
-        self.fields = [
-            {"id": "input-name", "label_id": "label-name", "type": "input"},
-            {"id": "input-host", "label_id": "label-host", "type": "input"},
-            {"id": "input-username", "label_id": "label-username", "type": "input"},
-            {"id": "auth-method-list", "label_id": "label-authmethod", "type": "optionlist"},
-            {"id": "input-keypath", "label_id": "label-keypath", "type": "input", "auth_type": "key"},
-            {"id": "input-password", "label_id": "label-password", "type": "input", "auth_type": "password"},
-            {"id": "add-btn", "label_id": None, "type": "button"},
-            {"id": "cancel-btn", "label_id": None, "type": "button"},
-        ]
+        # Cache widget references to avoid repeated query_one calls
+        self._labels: dict[str, Label] = {
+            "label-name": self.query_one("#label-name", Label),
+            "label-host": self.query_one("#label-host", Label),
+            "label-username": self.query_one("#label-username", Label),
+            "label-authmethod": self.query_one("#label-authmethod", Label),
+            "label-keypath": self.query_one("#label-keypath", Label),
+            "label-password": self.query_one("#label-password", Label),
+        }
+        self._buttons: dict[str, Button] = {
+            "add-btn": self.query_one("#add-btn", Button),
+            "cancel-btn": self.query_one("#cancel-btn", Button),
+        }
+        self._inputs: dict[str, Input] = {
+            "input-name": self.query_one("#input-name", Input),
+            "input-host": self.query_one("#input-host", Input),
+            "input-username": self.query_one("#input-username", Input),
+            "input-keypath": self.query_one("#input-keypath", Input),
+            "input-password": self.query_one("#input-password", Input),
+        }
+        self._auth_list: OptionList = self.query_one("#auth-method-list", OptionList)
+        self._key_container = self.query_one("#key-container")
+        self._password_container = self.query_one("#password-container")
+
+        # Use class-level field definitions
+        self.fields = list(self.FIELD_DEFINITIONS)
 
         # Select the first auth method (SSH Key) by default
-        auth_list = self.query_one("#auth-method-list", OptionList)
-        auth_list.highlighted = 0
+        self._auth_list.highlighted = 0
 
         # Start in navigation mode, highlight first field
         self.current_field_index = 0
@@ -294,20 +355,14 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
 
     def _update_field_highlights(self) -> None:
         """Update visual indicators to show which field is highlighted."""
-        # Define original label texts
-        label_texts = {
-            "label-name": "Server Name:",
-            "label-host": "Host (IP or Hostname):",
-            "label-username": "Username:",
-            "label-authmethod": "Authentication Method:",
-            "label-keypath": "SSH Key Path:",
-            "label-password": "Password:",
-        }
+        # Use cached references if available, fall back to query_one
+        labels = getattr(self, "_labels", None)
+        buttons = getattr(self, "_buttons", None)
 
         # Reset all labels to original text without arrows
-        for label_id, text in label_texts.items():
+        for label_id, text in self.LABEL_TEXTS.items():
             try:
-                label = self.query_one(f"#{label_id}", Label)
+                label = labels[label_id] if labels else self.query_one(f"#{label_id}", Label)
                 label.update(text)
                 label.remove_class("highlighted")
             except Exception as e:
@@ -317,7 +372,8 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
         # Reset button highlights
         for btn_id in ["add-btn", "cancel-btn"]:
             try:
-                self.query_one(f"#{btn_id}", Button).remove_class("highlighted-button")
+                btn = buttons[btn_id] if buttons else self.query_one(f"#{btn_id}", Button)
+                btn.remove_class("highlighted-button")
             except Exception as e:
                 # Button might not exist yet during initial setup
                 logger.info(f"Could not update button {btn_id}: {e}")
@@ -334,10 +390,10 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
             return
 
         # Add arrow and highlight to current field label
-        if field.get("label_id") and field["label_id"] in label_texts:
-            label = self.query_one(f"#{field['label_id']}", Label)
+        if field.get("label_id") and field["label_id"] in self.LABEL_TEXTS:
+            label = labels[field["label_id"]] if labels else self.query_one(f"#{field['label_id']}", Label)
             label.add_class("highlighted")
-            original_text = label_texts[field["label_id"]]
+            original_text = self.LABEL_TEXTS[field["label_id"]]
 
             # Update label text to include arrow
             if self.in_edit_mode:
@@ -348,14 +404,14 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
         # Highlight button if current field is a button
         if field["type"] == "button":
             try:
-                btn = self.query_one(f"#{field['id']}", Button)
+                btn = buttons[field["id"]] if buttons else self.query_one(f"#{field['id']}", Button)
                 btn.add_class("highlighted-button")
             except Exception as e:
                 logger.warning(f"Failed to highlight button {field['id']}: {e}")
 
         # Scroll to the highlighted field
         try:
-            widget = self.query_one(f"#{field['id']}")
+            widget = self._get_field_widget(field["id"], field["type"])
             if field["type"] == "button" and hasattr(widget, "scroll_visible"):
                 widget.scroll_visible(animate=False)
             else:
@@ -367,6 +423,32 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
             logger.warning(f"Failed to scroll to field {field['id']}: {e}")
 
         logger.info(f"Highlighted field {field['id']}, edit_mode={self.in_edit_mode}")
+
+    def _get_field_widget(self, field_id: str, field_type: str) -> Input | OptionList | Button:
+        """Get the cached widget for a field, or fall back to query_one.
+
+        Args:
+            field_id: The ID of the field widget
+            field_type: The type of field ('input', 'optionlist', 'button')
+
+        Returns:
+            The widget for the field
+        """
+        if field_type == "input":
+            inputs = getattr(self, "_inputs", None)
+            if inputs and field_id in inputs:
+                return inputs[field_id]
+            return self.query_one(f"#{field_id}", Input)
+        elif field_type == "optionlist":
+            auth_list = getattr(self, "_auth_list", None)
+            if auth_list:
+                return auth_list
+            return self.query_one(f"#{field_id}", OptionList)
+        else:  # button
+            buttons = getattr(self, "_buttons", None)
+            if buttons and field_id in buttons:
+                return buttons[field_id]
+            return self.query_one(f"#{field_id}", Button)
 
     def _get_current_field(self) -> FieldDefinition | None:
         """Get the current field definition."""
@@ -501,17 +583,17 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
         self.in_edit_mode = True
 
         if field["type"] == "input":
-            widget = self.query_one(f"#{field['id']}", Input)
+            widget = self._get_field_widget(field["id"], "input")
             widget.disabled = False
             widget.focus()
         elif field["type"] == "optionlist":
-            widget = self.query_one(f"#{field['id']}", OptionList)
+            widget = self._get_field_widget(field["id"], "optionlist")
             widget.disabled = False
             widget.focus()
         elif field["type"] == "button":
             # Buttons are activated immediately
             self.in_edit_mode = False
-            button = self.query_one(f"#{field['id']}", Button)
+            button = self._get_field_widget(field["id"], "button")
             self.on_button_pressed(Button.Pressed(button))
             return
 
@@ -531,13 +613,13 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
         self.in_edit_mode = False
 
         if field["type"] == "input":
-            widget = self.query_one(f"#{field['id']}", Input)
+            widget = self._get_field_widget(field["id"], "input")
             widget.disabled = True
             widget.blur()
             # Return focus to the screen
             self.focus()
         elif field["type"] == "optionlist":
-            widget = self.query_one(f"#{field['id']}", OptionList)
+            widget = self._get_field_widget(field["id"], "optionlist")
             widget.disabled = True
             widget.blur()
             # Return focus to the screen
@@ -567,8 +649,9 @@ class AddServerScreen(ModalScreen["ServerConfigDict | None"]):
 
     def _update_auth_fields(self) -> None:
         """Show/hide authentication fields based on selected method."""
-        key_container = self.query_one("#key-container")
-        password_container = self.query_one("#password-container")
+        # Use cached references if available
+        key_container = getattr(self, "_key_container", None) or self.query_one("#key-container")
+        password_container = getattr(self, "_password_container", None) or self.query_one("#password-container")
 
         if self.auth_method == "key":
             key_container.remove_class("hidden")
@@ -753,11 +836,11 @@ class MemoryWidget(Static):
     def render(self) -> str:
         """Render the memory widget."""
         if not self.memory_info:
-            return "  Memory: [dim]No data available[/dim]"
+            return "[dim]No data available[/dim]"
 
         mem = self.memory_info
         usage = mem.usage_percent
-        bar_width = 15
+        bar_width = 25
         filled = int((usage / 100.0) * bar_width)
         bar = "█" * filled + "░" * (bar_width - filled)
 
@@ -767,7 +850,7 @@ class MemoryWidget(Static):
         used_gb = mem.used_mb / 1024.0
         total_gb = mem.total_mb / 1024.0
 
-        return f"  Memory: [{color}]{bar}[/{color}] {usage:5.1f}% ({used_gb:.1f}/{total_gb:.1f} GB)"
+        return f"[{color}]{bar}[/{color}] {usage:5.1f}% ({used_gb:.1f}/{total_gb:.1f} GB)"
 
 
 class HistoryPlotWidget(Static):
@@ -881,11 +964,11 @@ class HistoryPlotWidget(Static):
         """Render the CPU history plot with enhanced visuals."""
         if not self.history_data or len(self.history_data) < 2:
             lines = []
-            border_width = self.plot_width + 2  # +2 for padding around title
+            border_width = self.plot_width + 6  # +6 for Y-axis labels
             lines.append("[dim]┌" + "─" * border_width + "┐[/dim]")
             lines.extend("[dim]│[/dim]" + " " * border_width + "[dim]│[/dim]" for _ in range(6))
             lines.append("[dim]└" + "─" * border_width + "┘[/dim]")
-            lines.append("[dim italic]  Collecting data... waiting for samples[/dim italic]")
+            lines.append("[dim italic]  Collecting data...[/dim italic]")
             return "\n".join(lines)
 
         # Plot parameters
@@ -904,11 +987,8 @@ class HistoryPlotWidget(Static):
         # Y-axis labels for each row
         y_labels = ["100%", " 80%", " 60%", " 40%", " 20%", "  0%"]
 
-        # Top border with title
-        title = " AVG CPU UTILIZATION "
-        left_border = "─" * ((plot_width - len(title)) // 2)
-        right_border = "─" * (plot_width - len(title) - len(left_border))
-        lines.append(f"[dim]     ┌{left_border}[/dim][bold dodger_blue2]{title}[/bold dodger_blue2][dim]{right_border}┐[/dim]")
+        # Top border
+        lines.append(f"[dim]     ┌{'─' * plot_width}┐[/dim]")
 
         # Plot rows with Y-axis
         for _i, (label, row) in enumerate(zip(y_labels, plot_rows, strict=True)):
@@ -917,17 +997,16 @@ class HistoryPlotWidget(Static):
         # Bottom border
         lines.append(f"[dim]     └{'─' * plot_width}┘[/dim]")
 
-        # Window width label (centered)
-        window_label = f"window width: {self.history_window}s"
-        label_padding = (plot_width - len(window_label)) // 2
-        lines.append(f"[dim]      {' ' * label_padding}{window_label}[/dim]")
+        # Time labels (oldest on left, newest on right)
+        lines.append(f"[dim]      -{self.history_window}s{' ' * (plot_width - 6)}now[/dim]")
 
         return "\n".join(lines)
 
 class ServerWidget(Static):
     """Widget displaying a server and its CPU cores."""
 
-    expanded = reactive(False)
+    # Use init=False to prevent watcher from firing before widget is fully initialized
+    expanded = reactive(False, init=False)
 
     # Spinner animation frames
     SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -950,7 +1029,6 @@ class ServerWidget(Static):
         """
         super().__init__(**kwargs)
         self.server_name = server_name
-        self.expanded = False  # Always start collapsed
         self.history_window = history_window
         self.plot_style = plot_style
         self.poll_interval = poll_interval
@@ -968,32 +1046,35 @@ class ServerWidget(Static):
         self._connection_start_time: float | None = None
         self._retry_count = 0
 
+        # Set expanded after all attributes are initialized (watcher-safe)
+        self.expanded = False  # Always start collapsed
+
     def compose(self) -> ComposeResult:
         """Compose the server widget layout."""
         with Vertical():
             # Sanitize server name for use in widget IDs (replace spaces with hyphens)
             safe_id = self.server_name.replace(" ", "-")
-            self.header_widget = Static("", id=f"header-{safe_id}")
+            self.header_widget = Static("", id=f"header-{safe_id}", classes="server-header")
             yield self.header_widget
 
             # Two-column layout: CPU cores on left, memory+history on right
             with Horizontal(id=f"content-{safe_id}", classes="content-layout"):
                 # Left column: CPU Cores Section
                 with Container(id=f"cores-{safe_id}", classes="section-container left-column") as self.cores_container:
-                    yield Static("[bold dodger_blue2]━━━ CPU CORES ━━━[/bold dodger_blue2]", classes="section-header")
+                    yield Static("CPU CORES", classes="section-header")
                     yield Container(id=f"cores-content-{safe_id}", classes="section-content")
 
                 # Right column: Memory and History stacked vertically
                 with Vertical(classes="right-column"):
                     # Memory Section with header
                     with Container(id=f"memory-{safe_id}", classes="section-container") as self.memory_container:
-                        yield Static("[bold dodger_blue2]━━━ MEMORY ━━━[/bold dodger_blue2]", classes="section-header")
+                        yield Static("MEMORY", classes="section-header")
                         self.memory_widget = MemoryWidget()
                         yield self.memory_widget
 
                     # History Section with header
                     with Container(id=f"history-{safe_id}", classes="section-container") as self.history_container:
-                        yield Static("[bold dodger_blue2]━━━ CPU HISTORY ━━━[/bold dodger_blue2]", classes="section-header")
+                        yield Static("CPU HISTORY", classes="section-header")
                         self.history_widget = HistoryPlotWidget(
                             self.history_window,
                             self.plot_style,
@@ -1004,7 +1085,20 @@ class ServerWidget(Static):
     def on_mount(self):
         """Handle widget mount event."""
         logger.info(f"ServerWidget mounted: {self.server_name}")
+        # Start spinner animation timer (0.1s interval for smooth animation)
+        self._spinner_timer = self.set_interval(0.1, self._animate_spinner)
         self.refresh_display()
+
+    def _animate_spinner(self) -> None:
+        """Advance the spinner animation frame.
+
+        This is called by the timer to animate the spinner independently
+        of the UI update loop.
+        """
+        # Only animate if we're showing a spinner (not connected)
+        if self.metrics is None or not self.metrics.connected:
+            self._spinner_index = (self._spinner_index + 1) % len(self.SPINNER_FRAMES)
+            self._update_header()
 
     def update_metrics(self, metrics: ServerMetrics):
         """Update server metrics.
@@ -1067,7 +1161,23 @@ class ServerWidget(Static):
         """Toggle expanded/collapsed state."""
         self.expanded = not self.expanded
         logger.info(f"ServerWidget '{self.server_name}' toggled: expanded={self.expanded}")
-        self.refresh_display()
+
+    def watch_expanded(self, expanded: bool) -> None:
+        """Called automatically when the expanded reactive property changes.
+
+        Args:
+            expanded: The new expanded state
+        """
+        # Show/hide all content sections based on expanded state
+        if self.cores_container:
+            self.cores_container.display = expanded
+        if self.memory_container:
+            self.memory_container.display = expanded
+        if self.history_container:
+            self.history_container.display = expanded
+        # Update header to reflect new state
+        self._update_header()
+
     def update_history(self, history_data: list[tuple[float, float]]):
         """Update CPU history data.
 
@@ -1085,10 +1195,10 @@ class ServerWidget(Static):
         if selected != self.is_selected:
             logger.info(f"ServerWidget '{self.server_name}' selection changed: {selected}")
         self.is_selected = selected
-        self.refresh_display()
+        self._update_header()
 
-    def refresh_display(self):
-        """Refresh the display of this widget."""
+    def _update_header(self) -> None:
+        """Update the header widget with current state."""
         if not self.header_widget:
             return
 
@@ -1097,8 +1207,7 @@ class ServerWidget(Static):
         selection_marker = "→" if self.is_selected else " "
 
         if self.metrics is None:
-            # Animate spinner only when showing it (increment for next refresh)
-            self._spinner_index = (self._spinner_index + 1) % len(self.SPINNER_FRAMES)
+            # Spinner animation is handled by _animate_spinner timer
             spinner = self.SPINNER_FRAMES[self._spinner_index]
             status = f"[cyan]{spinner} Initializing...[/cyan]"
         elif not self.metrics.connected:
@@ -1128,7 +1237,15 @@ class ServerWidget(Static):
 
         self.header_widget.update(header_text)
 
-        # Show/hide all content sections based on expanded state
+    def refresh_display(self):
+        """Refresh the display of this widget.
+
+        This method updates the header and container visibility.
+        Called by external code (e.g., UI update loop) to refresh the display.
+        """
+        self._update_header()
+        # Container visibility is handled by watch_expanded, but we update here
+        # as well for cases where refresh_display is called externally
         if self.cores_container:
             self.cores_container.display = self.expanded
         if self.memory_container:
@@ -1226,9 +1343,15 @@ class MonitoringApp(App[None]):
     }
 
     ServerWidget {
-        margin: 0 1;
+        margin: 0 1 1 1;
         padding: 0;
         height: auto;
+        border: round $primary-darken-2;
+        background: $surface;
+    }
+
+    ServerWidget:focus-within {
+        border: round $accent;
     }
 
     ServerWidget > Vertical {
@@ -1241,19 +1364,25 @@ class MonitoringApp(App[None]):
         height: auto;
     }
 
+    .server-header {
+        padding: 0 1;
+        height: auto;
+        background: $panel;
+    }
+
     CPUCoreWidget {
         padding: 0 1;
         height: auto;
     }
 
     MemoryWidget {
-        padding: 0 1;
+        padding: 1 1;
         height: auto;
         text-align: center;
     }
 
     HistoryPlotWidget {
-        padding: 0 1;
+        padding: 1 1;
         height: auto;
         text-align: center;
     }
@@ -1261,31 +1390,37 @@ class MonitoringApp(App[None]):
     .content-layout {
         height: auto;
         width: 100%;
+        padding: 0 1 1 1;
+        layout: grid;
+        grid-size: 2;
+        grid-columns: auto 1fr;
+        grid-gutter: 1;
     }
 
     .left-column {
-        width: 50%;
         height: auto;
     }
 
     .right-column {
-        width: 50%;
         height: auto;
     }
 
     .section-container {
         height: auto;
         padding: 0;
-        border: solid $primary;
+        border: round $primary-darken-1;
         background: $surface;
     }
 
+    .section-container.left-column {
+        border: round $primary-darken-1;
+    }
+
     .right-column .section-container {
-        margin-left: 1;
         margin-top: 1;
     }
 
-    .right-column .section-container:first-child {
+    .right-column .section-container:first-of-type {
         margin-top: 0;
     }
 
@@ -1293,7 +1428,9 @@ class MonitoringApp(App[None]):
         width: 100%;
         text-align: center;
         height: 1;
-        background: $boost;
+        background: $primary-darken-2;
+        color: $text-primary;
+        text-style: bold;
         padding: 0 1;
     }
 
@@ -1444,12 +1581,15 @@ class MonitoringApp(App[None]):
             logger.info(f"Server deleted, adjusted selection from index {old_index} to {self.selected_index}")
             self._update_selection()
 
-            # Callback to main app to persist changes
+            # Post message for Textual-idiomatic handling
+            self.post_message(ServerDeleted(server_name))
+
+            # Legacy callback support for backwards compatibility
             if self._on_delete_server:
                 logger.info(f"Invoking delete callback for server '{server_name}'")
                 self._on_delete_server(server_name)
 
-            self.notify(f"Server '{server_name}' deleted", severity="information")
+            self.notify(f"Server '{server_name}' deleted", severity="success")
         elif not confirmed:
             logger.info("Server deletion was not confirmed by user")
 
@@ -1462,11 +1602,15 @@ class MonitoringApp(App[None]):
         """Handle add server result."""
         if server_config:
             logger.info(f"Add server confirmed: {server_config['name']} ({server_config['host']})")
-            # Callback to main app to create components and persist
+
+            # Post message for Textual-idiomatic handling
+            self.post_message(ServerAdded(server_config))
+
+            # Legacy callback support for backwards compatibility
             if self._on_add_server:
                 logger.info(f"Invoking add callback for server '{server_config['name']}'")
                 self._on_add_server(server_config)
-            self.notify(f"Server '{server_config['name']}' added", severity="information")
+            self.notify(f"Server '{server_config['name']}' added", severity="success")
         else:
             logger.info("Add server cancelled by user")
 
