@@ -12,7 +12,8 @@ import pytest
 from src.main import CPUMonitoringApp
 from src.monitor import CPUCore, CPUMonitor, ServerMetrics
 from src.ssh_client import ServerConfig, SSHClient
-from src.ui import AddServerScreen, ConfirmDeleteScreen, MonitoringApp, ServerWidget
+from src.ui import MonitoringApp, ServerWidget
+from src.ui.screens import AddServerScreen, ConfirmDeleteScreen
 
 
 class TestIntegration:

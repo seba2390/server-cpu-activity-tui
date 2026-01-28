@@ -1,0 +1,6 @@
+HistoryPlotWidget {
+    height: auto;
+    width: 1fr;
+    padding: 0 1;
+    content-align: center top;
+}

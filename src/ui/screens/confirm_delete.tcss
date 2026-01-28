@@ -1,0 +1,27 @@
+ConfirmDeleteScreen {
+    align: center middle;
+}
+
+#confirm-dialog {
+    width: 60;
+    height: auto;
+    padding: 1 2;
+    background: $surface;
+    border: solid $primary;
+}
+
+#confirm-dialog Label {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#confirm-buttons {
+    width: 100%;
+    height: auto;
+    align: center middle;
+}
+
+#confirm-buttons Button {
+    margin: 0 2;
+}

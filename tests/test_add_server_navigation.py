@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 from textual.widgets import Input
 
-from src.ui import AddServerScreen
+from src.ui.screens import AddServerScreen
 
 
 class TestAddServerScreenTwoLevelNavigation:

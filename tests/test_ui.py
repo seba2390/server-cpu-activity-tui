@@ -5,7 +5,9 @@ from unittest.mock import Mock
 from textual.widgets import Static
 
 from src.monitor import CPUCore, MemoryInfo, ServerMetrics
-from src.ui import CPUCoreWidget, HistoryPlotWidget, MemoryWidget, ServerWidget
+from src.ui import MonitoringApp, ServerWidget
+from src.ui.screens import AddServerScreen, ConfirmDeleteScreen
+from src.ui.widgets import CPUCoreWidget, HistoryPlotWidget, MemoryWidget
 
 
 def test_cpu_core_widget_initialization():
@@ -173,7 +175,6 @@ def test_server_metrics_core_count():
 
 def test_confirm_delete_screen_initialization():
     """Test ConfirmDeleteScreen initialization."""
-    from src.ui import ConfirmDeleteScreen
 
     screen = ConfirmDeleteScreen(server_name="test-server")
     assert screen.server_name == "test-server"
@@ -183,7 +184,6 @@ def test_confirm_delete_screen_yes_button():
     """Test ConfirmDeleteScreen yes button."""
     from textual.widgets import Button
 
-    from src.ui import ConfirmDeleteScreen
 
     screen = ConfirmDeleteScreen(server_name="test-server")
 
@@ -204,7 +204,6 @@ def test_confirm_delete_screen_no_button():
     """Test ConfirmDeleteScreen no button."""
     from textual.widgets import Button
 
-    from src.ui import ConfirmDeleteScreen
 
     screen = ConfirmDeleteScreen(server_name="test-server")
 
@@ -223,7 +222,6 @@ def test_confirm_delete_screen_no_button():
 
 def test_confirm_delete_screen_action_confirm():
     """Test ConfirmDeleteScreen confirm action."""
-    from src.ui import ConfirmDeleteScreen
 
     screen = ConfirmDeleteScreen(server_name="test-server")
     screen.dismiss = Mock()
@@ -235,7 +233,6 @@ def test_confirm_delete_screen_action_confirm():
 
 def test_confirm_delete_screen_action_cancel():
     """Test ConfirmDeleteScreen cancel action."""
-    from src.ui import ConfirmDeleteScreen
 
     screen = ConfirmDeleteScreen(server_name="test-server")
     screen.dismiss = Mock()
@@ -250,7 +247,6 @@ def test_confirm_delete_screen_action_cancel():
 
 def test_add_server_screen_initialization():
     """Test AddServerScreen initialization."""
-    from src.ui import AddServerScreen
 
     screen = AddServerScreen()
     # Just verify it can be created
@@ -259,7 +255,6 @@ def test_add_server_screen_initialization():
 
 def test_add_server_screen_action_cancel():
     """Test AddServerScreen cancel action."""
-    from src.ui import AddServerScreen
 
     screen = AddServerScreen()
     screen.dismiss = Mock()
@@ -273,7 +268,6 @@ def test_add_server_screen_cancel_button():
     """Test AddServerScreen cancel button."""
     from textual.widgets import Button
 
-    from src.ui import AddServerScreen
 
     screen = AddServerScreen()
 
@@ -295,7 +289,6 @@ def test_add_server_screen_cancel_button():
 
 def test_monitoring_app_initialization():
     """Test MonitoringApp initialization."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [
         ServerWidget(server_name="server1"),
@@ -312,7 +305,6 @@ def test_monitoring_app_initialization():
 
 def test_monitoring_app_initialization_with_callbacks():
     """Test MonitoringApp initialization with callbacks."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
     delete_cb = Mock()
@@ -328,7 +320,6 @@ def test_monitoring_app_initialization_with_callbacks():
 
 def test_monitoring_app_action_navigate_up():
     """Test MonitoringApp navigate up action."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [
         ServerWidget(server_name="server1"),
@@ -348,7 +339,6 @@ def test_monitoring_app_action_navigate_up():
 
 def test_monitoring_app_action_navigate_up_at_top():
     """Test MonitoringApp navigate up at top (should not change)."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [
         ServerWidget(server_name="server1"),
@@ -367,7 +357,6 @@ def test_monitoring_app_action_navigate_up_at_top():
 
 def test_monitoring_app_action_navigate_down():
     """Test MonitoringApp navigate down action."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [
         ServerWidget(server_name="server1"),
@@ -387,7 +376,6 @@ def test_monitoring_app_action_navigate_down():
 
 def test_monitoring_app_action_navigate_down_at_bottom():
     """Test MonitoringApp navigate down at bottom (should not change)."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [
         ServerWidget(server_name="server1"),
@@ -406,7 +394,6 @@ def test_monitoring_app_action_navigate_down_at_bottom():
 
 def test_monitoring_app_action_toggle_expand():
     """Test MonitoringApp toggle expand action."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
 
@@ -422,7 +409,6 @@ def test_monitoring_app_action_toggle_expand():
 
 def test_monitoring_app_action_expand():
     """Test MonitoringApp expand action."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
 
@@ -438,7 +424,6 @@ def test_monitoring_app_action_expand():
 
 def test_monitoring_app_action_expand_already_expanded():
     """Test MonitoringApp expand when already expanded."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
 
@@ -457,7 +442,6 @@ def test_monitoring_app_action_expand_already_expanded():
 
 def test_monitoring_app_action_collapse():
     """Test MonitoringApp collapse action."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
 
@@ -475,7 +459,6 @@ def test_monitoring_app_action_collapse():
 
 def test_monitoring_app_action_collapse_already_collapsed():
     """Test MonitoringApp collapse when already collapsed."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
 
@@ -492,7 +475,6 @@ def test_monitoring_app_action_collapse_already_collapsed():
 
 def test_monitoring_app_action_refresh():
     """Test MonitoringApp refresh action."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [
         ServerWidget(server_name="server1"),
@@ -514,7 +496,6 @@ def test_monitoring_app_action_refresh():
 
 def test_monitoring_app_action_delete_server_no_servers():
     """Test MonitoringApp delete server with no servers."""
-    from src.ui import MonitoringApp
 
     app = MonitoringApp(server_widgets=[])
     app.notify = Mock()
@@ -529,7 +510,6 @@ def test_monitoring_app_add_server_widget():
     """Test MonitoringApp add_server_widget method."""
     from unittest.mock import MagicMock
 
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
     app = MonitoringApp(server_widgets=widgets)
@@ -555,7 +535,6 @@ def test_monitoring_app_add_server_widget():
 
 def test_monitoring_app_update_selection():
     """Test MonitoringApp _update_selection method."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [
         ServerWidget(server_name="server1"),
@@ -724,7 +703,6 @@ def test_server_widget_remove_excess_core_widgets():
 
 def test_monitoring_app_action_toggle_expand_invalid_index():
     """Test MonitoringApp toggle expand with invalid index."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
 
@@ -737,7 +715,6 @@ def test_monitoring_app_action_toggle_expand_invalid_index():
 
 def test_monitoring_app_action_expand_invalid_index():
     """Test MonitoringApp expand with invalid index."""
-    from src.ui import MonitoringApp, ServerWidget
 
     widgets = [ServerWidget(server_name="server1")]
 
@@ -750,7 +727,6 @@ def test_monitoring_app_action_expand_invalid_index():
 
 def test_monitoring_app_add_server_widget_without_container():
     """Test MonitoringApp add_server_widget without main_container."""
-    from src.ui import MonitoringApp, ServerWidget
 
     app = MonitoringApp(server_widgets=[])
     app.main_container = None
@@ -852,17 +828,19 @@ def test_history_plot_widget_initialization():
     assert widget.history_data == []
 
 
-def test_history_plot_widget_render_no_data():
-    """Test rendering history plot with no data."""
+def test_history_plot_widget_no_data():
+    """Test history plot with no data is pre-filled with zeros."""
     widget = HistoryPlotWidget()
 
-    rendered = widget.render()
+    # With no data, display_data is pre-filled with zeros
+    # Number of bars = history_window / poll_interval
+    assert len(widget.data) == widget._num_bars
+    assert all(v == 0.0 for v in widget.data)
+    assert widget.history_data == []
 
-    assert "Collecting data" in rendered or "No data" in rendered.lower()
 
-
-def test_history_plot_widget_render_with_data():
-    """Test rendering history plot with data."""
+def test_history_plot_widget_with_data():
+    """Test history plot with data updates correctly."""
     import time
 
     current_time = time.time()
@@ -876,13 +854,9 @@ def test_history_plot_widget_render_with_data():
     widget = HistoryPlotWidget(history_window=60, poll_interval=2.0)
     widget.update_history(history_data)
 
-    rendered = widget.render()
-
-    # Title is now in section header, plot shows time labels instead
-    assert "-60s" in rendered  # Time range indicator
-    assert "now" in rendered  # Current time indicator
-    # Should have braille plot characters (check for blue color which is used in braille plots)
-    assert "[dodger_blue2]" in rendered
+    # Check that history_data was stored correctly
+    assert widget.history_data == history_data
+    assert len(widget.history_data) == 4
 
 
 def test_history_plot_widget_update():
@@ -899,6 +873,7 @@ def test_history_plot_widget_update():
     widget.update_history(new_data)
 
     assert widget.history_data == new_data
+    assert len(widget.history_data) == 2
 
 
 def test_server_widget_with_history_window():
@@ -928,24 +903,27 @@ def test_server_widget_update_history():
     widget.update_history(history_data)
 
 
-# Tests for braille visualization
-def test_history_plot_widget_braille_line_plot():
-    """Test Braille line plot generation."""
+# Tests for Sparkline-based visualization
+def test_history_plot_widget_sparkline_data():
+    """Test Sparkline data handling."""
     widget = HistoryPlotWidget(history_window=60, poll_interval=2.0)
 
-    usages = [25.0, 50.0, 75.0, 100.0, 50.0]
-    plot_rows = widget._create_braille_line_plot(usages, width=5, height=4)
+    usages_with_timestamps = [
+        (1000.0, 25.0),
+        (1002.0, 50.0),
+        (1004.0, 75.0),
+        (1006.0, 100.0),
+        (1008.0, 50.0),
+    ]
+    widget.update_history(usages_with_timestamps)
 
-    assert len(plot_rows) == 4
-    assert all(isinstance(row, str) for row in plot_rows)
-
-    # Check for blue color (used in braille plot)
-    combined = "".join(plot_rows)
-    assert "[dodger_blue2]" in combined
+    # Check that history_data is stored correctly
+    assert widget.history_data == usages_with_timestamps
+    assert len(widget.history_data) == 5
 
 
-def test_history_plot_widget_render_braille():
-    """Test rendering with braille style."""
+def test_history_plot_widget_sparkline_style():
+    """Test that the widget stores history data correctly."""
     import time
     current_time = time.time()
     history_data = [
@@ -956,11 +934,9 @@ def test_history_plot_widget_render_braille():
         (current_time, 85.0),
     ]
 
-    # Test braille style
-    widget_braille = HistoryPlotWidget(history_window=60, poll_interval=2.0)
-    widget_braille.update_history(history_data)
-    rendered_braille = widget_braille.render()
-    # Title is now in section header, plot shows time labels instead
-    assert "-60s" in rendered_braille  # Time range indicator
-    assert "now" in rendered_braille  # Current time indicator
-    assert isinstance(rendered_braille, str)
+    widget = HistoryPlotWidget(history_window=60, poll_interval=2.0)
+    widget.update_history(history_data)
+
+    # Check that history data is stored
+    assert widget.history_data == history_data
+    assert widget.history_window == 60

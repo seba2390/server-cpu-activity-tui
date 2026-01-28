@@ -1,0 +1,95 @@
+Screen {
+    background: $surface;
+}
+
+#main-container {
+    height: 100%;
+    overflow-y: auto;
+}
+
+ServerWidget {
+    margin: 0 1 1 1;
+    padding: 0;
+    height: auto;
+    border: round $primary-darken-2;
+    background: $surface;
+}
+
+ServerWidget:focus-within {
+    border: round $accent;
+}
+
+.server-header {
+    padding: 0 1;
+    height: auto;
+    background: $panel;
+}
+
+CPUCoreWidget {
+    padding: 0 1;
+    height: auto;
+}
+
+MemoryWidget {
+    padding: 1 1;
+    height: auto;
+    text-align: center;
+}
+
+/* Two-column layout container */
+.content-layout {
+    width: 100%;
+    height: auto;
+    padding: 0 1 1 1;
+}
+
+/* Left column: fixed width for CPU cores */
+.left-column {
+    width: 37;
+    height: auto;
+    border: round $primary-darken-1;
+    background: $surface;
+}
+
+/* Right column: flexible width for memory and history */
+.right-column {
+    width: 1fr;
+    height: auto;
+    margin-left: 1;
+}
+
+/* Section containers inside right column */
+.section-container {
+    height: auto;
+    padding: 0;
+    border: round $primary-darken-1;
+    background: $surface;
+    margin-bottom: 1;
+}
+
+.section-container:last-of-type {
+    margin-bottom: 0;
+}
+
+.section-header {
+    width: 100%;
+    text-align: center;
+    height: 1;
+    background: $primary-darken-2;
+    color: $text-primary;
+    text-style: bold;
+    padding: 0 1;
+}
+
+.section-content {
+    height: auto;
+    padding: 0;
+}
+
+#status-bar {
+    dock: bottom;
+    height: 1;
+    background: $panel;
+    color: $text;
+    padding: 0 1;
+}
